@@ -79,6 +79,11 @@ class WeatherWidget extends HTMLElement {
 
                     const weatherData = await weatherResponse.json();
                     
+                    // Debug: Log the actual API response
+                    console.log('Raw WeatherAPI response:', weatherData);
+                    console.log('Temperature F:', weatherData.current.temp_f);
+                    console.log('Temperature C:', weatherData.current.temp_c);
+                    
                     if (!weatherData.current) {
                         throw new Error('Invalid weather data received from WeatherAPI');
                     }
@@ -129,7 +134,7 @@ class WeatherWidget extends HTMLElement {
                 const text = conditionText.toLowerCase();
                 
                 if (text.includes('sunny') || text.includes('clear')) {
-                    return { name: 'Clear', dayClass: 'sunny', nightClass: 'sunny', dayEffects: 'sun', nightEffects: 'moon' };
+                    return { name: 'Clear', dayClass: 'sunny', nightClass: 'sunny', dayEffects: 'sun', nightEffects: 'moon-stars' };
                 }
                 if (text.includes('partly cloudy') || text.includes('partly')) {
                     return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
@@ -288,6 +293,10 @@ class WeatherWidget extends HTMLElement {
                     case 'moon':
                         outsideView.innerHTML = '<div class="moon"></div>';
                         break;
+                    case 'moon-stars':
+                        outsideView.innerHTML = '<div class="moon"></div>';
+                        this.createStars();
+                        break;
                     case 'clouds':
                         outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div>';
                         break;
@@ -323,6 +332,20 @@ class WeatherWidget extends HTMLElement {
                     drop.style.animationDuration = (Math.random() * 0.3 + 0.4) + 's';
                     drop.style.animationDelay = Math.random() * 1.5 + 's';
                     outsideView.appendChild(drop);
+                }
+            }
+
+            createStars() {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                for (let i = 0; i < 15; i++) {
+                    const star = document.createElement('div');
+                    star.className = 'star';
+                    star.textContent = '✦';
+                    star.style.left = Math.random() * 90 + 5 + '%'; // Keep stars away from edges
+                    star.style.top = Math.random() * 60 + 10 + '%'; // Keep stars in upper portion
+                    star.style.animationDelay = Math.random() * 3 + 's';
+                    star.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                    outsideView.appendChild(star);
                 }
             }
 
@@ -710,6 +733,24 @@ class WeatherWidget extends HTMLElement {
                             5%, 85% { opacity: 1; }
                         }
                         
+                        .star {
+                            position: absolute;
+                            color: #FFFFFF;
+                            font-size: 12px;
+                            animation: twinkle linear infinite;
+                            z-index: 3;
+                            user-select: none;
+                            text-shadow: 0 0 6px rgba(255,255,255,0.8);
+                            filter: drop-shadow(0 0 2px rgba(255,255,255,0.6));
+                        }
+                        
+                        @keyframes twinkle {
+                            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                            25% { opacity: 1; transform: scale(1.2); }
+                            50% { opacity: 0.6; transform: scale(1); }
+                            75% { opacity: 1; transform: scale(1.1); }
+                        }
+                        
                         .loading {
                             position: absolute;
                             top: 50%;
@@ -741,4 +782,3 @@ class WeatherWidget extends HTMLElement {
         }
 
         customElements.define('weather-widget', WeatherWidget);
-    
