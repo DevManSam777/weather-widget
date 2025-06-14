@@ -6,6 +6,8 @@ class WeatherWidget extends HTMLElement {
                 this.currentTimezone = null;
                 this.currentLocationName = null;
                 this.loadingState = false;
+                this.sunriseTime = null;
+                this.sunsetTime = null;
             }
 
             static get observedAttributes() {
@@ -45,13 +47,9 @@ class WeatherWidget extends HTMLElement {
                 console.log(`Loading weather for: ${location}`);
 
                 try {
-                    // Use WeatherAPI.com - much more reliable and handles geocoding internally
                     const weatherData = await this.fetchWeatherFromWeatherAPI(location, units);
-                    
                     console.log(`Weather data loaded for ${location}:`, weatherData);
-                    
                     this.displayWeather(weatherData);
-                    
                 } catch (error) {
                     console.error(`Failed to load weather for ${location}:`, error);
                     this.displayError(error.message);
@@ -61,50 +59,56 @@ class WeatherWidget extends HTMLElement {
             }
 
             async fetchWeatherFromWeatherAPI(location, units) {
-                try {
-                    // WeatherAPI.com free tier API key (demo key - you'd want your own for production)
-                    // They allow location names directly - no separate geocoding needed!
-                    const apiKey = '595f7617e8694a44abe15716251406'; // For demo purposes - get free key at weatherapi.com
-                    const url = `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(location)}&aqi=no`;
-                    
-                    console.log(`Fetching weather from WeatherAPI: ${url}`);
+                // WeatherAPI.com free tier API key - replace with your own for production
+                const apiKey = '595f7617e8694a44abe15716251406';
+                const currentUrl = `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(location)}&aqi=no`;
+                const astronomyUrl = `https://api.weatherapi.com/v1/astronomy.json?key=${apiKey}&q=${encodeURIComponent(location)}`;
+                
+                console.log(`Fetching weather from WeatherAPI: ${currentUrl}`);
 
-                    const response = await fetch(url);
+                try {
+                    // Fetch both current weather and astronomy data
+                    const [weatherResponse, astronomyResponse] = await Promise.all([
+                        fetch(currentUrl),
+                        fetch(astronomyUrl)
+                    ]);
                     
-                    if (!response.ok) {
-                        if (response.status === 403) {
-                            console.log('API key demo failed, trying without key for basic demo...');
-                            // Try a backup approach or use mock data with real location info
-                            return this.getRealisticMockData(location, units);
-                        }
-                        throw new Error(`WeatherAPI returned ${response.status}: ${response.statusText}`);
+                    if (!weatherResponse.ok) {
+                        throw new Error(`WeatherAPI returned ${weatherResponse.status}: ${weatherResponse.statusText}`);
                     }
 
-                    const data = await response.json();
-                    console.log('WeatherAPI response:', data);
-
-                    if (!data.current) {
+                    const weatherData = await weatherResponse.json();
+                    
+                    if (!weatherData.current) {
                         throw new Error('Invalid weather data received from WeatherAPI');
                     }
 
                     // Extract location info
-                    this.currentLocationName = data.location.name;
-                    this.currentTimezone = data.location.tz_id;
+                    this.currentLocationName = weatherData.location.name;
+                    this.currentTimezone = weatherData.location.tz_id;
+                    
+                    // Extract astronomy data if available
+                    if (astronomyResponse.ok) {
+                        const astronomyData = await astronomyResponse.json();
+                        if (astronomyData.astronomy && astronomyData.astronomy.astro) {
+                            this.sunriseTime = astronomyData.astronomy.astro.sunrise;
+                            this.sunsetTime = astronomyData.astronomy.astro.sunset;
+                            console.log(`Sunrise: ${this.sunriseTime}, Sunset: ${this.sunsetTime}`);
+                        }
+                    }
                     
                     console.log(`Location: ${this.currentLocationName}, Timezone: ${this.currentTimezone}`);
 
-                    return this.parseWeatherAPIData(data, units);
+                    return this.parseWeatherAPIData(weatherData, units);
                     
                 } catch (error) {
                     console.error('WeatherAPI error:', error);
-                    console.log('Falling back to realistic mock data...');
-                    return this.getRealisticMockData(location, units);
+                    throw new Error(`Unable to fetch weather data: ${error.message}`);
                 }
             }
 
             parseWeatherAPIData(data, units) {
                 const current = data.current;
-                const location = data.location;
                 
                 // Get temperature in the right units
                 const temperature = units === 'F' ? Math.round(current.temp_f) : Math.round(current.temp_c);
@@ -117,12 +121,11 @@ class WeatherWidget extends HTMLElement {
                     condition: condition,
                     windSpeed: Math.round(units === 'F' ? current.wind_mph : current.wind_kph),
                     humidity: current.humidity,
-                    timezone: location.tz_id
+                    timezone: data.location.tz_id
                 };
             }
 
             mapWeatherAPICondition(conditionText, conditionCode) {
-                // Map WeatherAPI conditions to our visual effects
                 const text = conditionText.toLowerCase();
                 
                 if (text.includes('sunny') || text.includes('clear')) {
@@ -151,175 +154,9 @@ class WeatherWidget extends HTMLElement {
                 return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
             }
 
-            getRealisticMockData(location, units) {
-                console.log(`⚠️ Using realistic mock data for: ${location}`);
-                
-                // Generate somewhat realistic mock data based on location
-                const mockTemps = {
-                    'tokyo': { f: 68, c: 20, condition: 'Partly Cloudy', effects: 'sun-clouds' },
-                    'london': { f: 55, c: 13, condition: 'Cloudy', effects: 'clouds' },
-                    'new york': { f: 62, c: 17, condition: 'Clear', effects: 'sun' },
-                    'sydney': { f: 75, c: 24, condition: 'Sunny', effects: 'sun' },
-                    'cairo': { f: 85, c: 29, condition: 'Clear', effects: 'sun' },
-                    'mumbai': { f: 82, c: 28, condition: 'Partly Cloudy', effects: 'sun-clouds' },
-                    'berlin': { f: 58, c: 14, condition: 'Cloudy', effects: 'clouds' },
-                    'são paulo': { f: 77, c: 25, condition: 'Partly Cloudy', effects: 'sun-clouds' },
-                    'vancouver': { f: 59, c: 15, condition: 'Rain', effects: 'rain' }
-                };
-                
-                const locationKey = location.toLowerCase();
-                const mock = mockTemps[locationKey] || { f: 70, c: 21, condition: 'Partly Cloudy', effects: 'sun-clouds' };
-                
-                this.currentLocationName = location;
-                this.currentTimezone = this.estimateTimezone(0, 0); // Basic fallback
-                
-                return {
-                    temperature: units === 'F' ? mock.f : mock.c,
-                    condition: {
-                        name: mock.condition + ' (Demo)',
-                        dayClass: mock.effects.includes('sun') && !mock.effects.includes('clouds') ? 'sunny' : 
-                                 mock.effects.includes('rain') ? 'rainy' :
-                                 mock.effects.includes('clouds') ? 'cloudy' : 'partly-cloudy',
-                        nightClass: mock.effects.includes('rain') ? 'rainy' : 'partly-cloudy',
-                        dayEffects: mock.effects,
-                        nightEffects: mock.effects.replace('sun', 'moon')
-                    },
-                    windSpeed: Math.floor(Math.random() * 15) + 5,
-                    timezone: this.currentTimezone
-                };
-            }
-
-            async geocodeWithOpenMeteo(location) {
-                try {
-                    // Use Open-Meteo's geocoding API - same service as weather, so more reliable
-                    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
-                    
-                    console.log(`Geocoding with Open-Meteo: ${url}`);
-                    
-                    const response = await fetch(url);
-                    
-                    if (!response.ok) {
-                        throw new Error(`Geocoding failed: ${response.status} ${response.statusText}`);
-                    }
-                    
-                    const data = await response.json();
-                    console.log('Open-Meteo geocoding response:', data);
-                    
-                    if (!data.results || data.results.length === 0) {
-                        throw new Error(`Location "${location}" not found`);
-                    }
-                    
-                    const result = data.results[0];
-                    
-                    return {
-                        lat: result.latitude,
-                        lon: result.longitude,
-                        name: result.name,
-                        country: result.country,
-                        timezone: result.timezone || this.estimateTimezone(result.latitude, result.longitude)
-                    };
-                    
-                } catch (error) {
-                    console.error('Open-Meteo geocoding error:', error);
-                    throw new Error(`Failed to find location "${location}": ${error.message}`);
-                }
-            }
-
-            estimateTimezone(lat, lon) {
-                // Simple timezone estimation based on longitude as fallback
-                const offset = Math.round(lon / 15);
-                
-                // Handle special cases and major timezone boundaries
-                if (lat >= 24.0 && lat <= 71.0 && lon >= -180.0 && lon <= -66.0) {
-                    // North America
-                    if (lon >= -130.0) return 'America/Anchorage';
-                    if (lon >= -125.0) return 'America/Los_Angeles';
-                    if (lon >= -114.0) return 'America/Denver';
-                    if (lon >= -104.0) return 'America/Chicago';
-                    return 'America/New_York';
-                }
-                
-                // Europe
-                if (lat >= 35.0 && lat <= 71.0 && lon >= -10.0 && lon <= 40.0) {
-                    if (lon <= 5.0) return 'Europe/London';
-                    if (lon <= 15.0) return 'Europe/Paris';
-                    if (lon <= 25.0) return 'Europe/Berlin';
-                    return 'Europe/Moscow';
-                }
-                
-                // Asia
-                if (lat >= 0.0 && lat <= 50.0 && lon >= 60.0 && lon <= 150.0) {
-                    if (lon <= 75.0) return 'Asia/Kolkata';
-                    if (lon <= 105.0) return 'Asia/Bangkok';
-                    if (lon <= 125.0) return 'Asia/Shanghai';
-                    return 'Asia/Tokyo';
-                }
-                
-                // Australia/Oceania
-                if (lat >= -45.0 && lat <= -10.0 && lon >= 110.0 && lon <= 180.0) {
-                    if (lon <= 130.0) return 'Australia/Perth';
-                    if (lon <= 145.0) return 'Australia/Adelaide';
-                    return 'Australia/Sydney';
-                }
-                
-                // Default to UTC-based timezone
-                const utcOffset = Math.max(-12, Math.min(12, offset));
-                return utcOffset >= 0 ? `Etc/GMT-${utcOffset}` : `Etc/GMT+${Math.abs(utcOffset)}`;
-            }
-
-            parseWeatherData(data) {
-                const current = data.current_weather;
-                const condition = this.mapWeatherCode(current.weathercode);
-                
-                return {
-                    temperature: Math.round(current.temperature),
-                    condition: condition,
-                    windSpeed: Math.round(current.windspeed),
-                    timezone: data.timezone || this.currentTimezone
-                };
-            }
-
-            getMockWeatherData(units) {
-                console.log('Using mock weather data as fallback');
-                const temp = units === 'F' ? 72 : 22;
-                return {
-                    temperature: temp,
-                    condition: {
-                        name: 'Partly Cloudy',
-                        dayClass: 'partly-cloudy',
-                        nightClass: 'partly-cloudy',
-                        dayEffects: 'sun-clouds',
-                        nightEffects: 'moon-clouds'
-                    },
-                    windSpeed: 8,
-                    timezone: this.currentTimezone
-                };
-            }
-
-            mapWeatherCode(code) {
-                const conditions = {
-                    0: { name: 'Clear', dayClass: 'sunny', nightClass: 'sunny', dayEffects: 'sun', nightEffects: 'moon' },
-                    1: { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' },
-                    2: { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' },
-                    3: { name: 'Overcast', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' },
-                    45: { name: 'Foggy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' },
-                    48: { name: 'Foggy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' },
-                    51: { name: 'Light Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' },
-                    53: { name: 'Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' },
-                    55: { name: 'Heavy Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' },
-                    71: { name: 'Light Snow', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' },
-                    73: { name: 'Snow', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' },
-                    75: { name: 'Heavy Snow', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' },
-                    95: { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' },
-                    96: { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' },
-                    99: { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' }
-                };
-
-                return conditions[code] || conditions[1];
-            }
-
             isNightTime() {
                 if (!this.currentTimezone) {
+                    // Fallback to basic hour check if no timezone
                     const hour = new Date().getHours();
                     return hour >= 19 || hour < 6;
                 }
@@ -327,13 +164,53 @@ class WeatherWidget extends HTMLElement {
                 try {
                     const now = new Date();
                     const localTime = new Date(now.toLocaleString("en-US", { timeZone: this.currentTimezone }));
+                    
+                    // If we have sunrise/sunset times, use those
+                    if (this.sunriseTime && this.sunsetTime) {
+                        const currentTimeStr = localTime.toLocaleTimeString('en-US', { 
+                            hour12: true, 
+                            hour: 'numeric', 
+                            minute: '2-digit' 
+                        });
+                        
+                        const sunriseTime = this.parseTimeString(this.sunriseTime);
+                        const sunsetTime = this.parseTimeString(this.sunsetTime);
+                        const currentTime = this.parseTimeString(currentTimeStr);
+                        
+                        // Night time is after sunset or before sunrise
+                        if (sunsetTime < sunriseTime) {
+                            // Sunset is before midnight, sunrise is after midnight
+                            return currentTime >= sunsetTime || currentTime < sunriseTime;
+                        } else {
+                            // Both sunrise and sunset are on the same day
+                            return currentTime < sunriseTime || currentTime >= sunsetTime;
+                        }
+                    }
+                    
+                    // Fallback to basic hour check
                     const hour = localTime.getHours();
                     return hour >= 19 || hour < 6;
+                    
                 } catch (error) {
                     console.error('Timezone error:', error);
                     const hour = new Date().getHours();
                     return hour >= 19 || hour < 6;
                 }
+            }
+
+            parseTimeString(timeStr) {
+                // Convert time string like "06:30 AM" to minutes since midnight
+                const [time, period] = timeStr.split(' ');
+                const [hours, minutes] = time.split(':').map(Number);
+                
+                let totalMinutes = (hours % 12) * 60 + minutes;
+                if (period === 'PM' && hours !== 12) {
+                    totalMinutes += 12 * 60;
+                } else if (period === 'AM' && hours === 12) {
+                    totalMinutes = minutes;
+                }
+                
+                return totalMinutes;
             }
 
             getLocalTime() {
@@ -469,9 +346,27 @@ class WeatherWidget extends HTMLElement {
                         const newTime = this.getLocalTime();
                         if (timeElement.textContent !== newTime) {
                             timeElement.textContent = newTime;
+                            
+                            // Check if day/night status has changed and update display if needed
+                            const currentWeatherInfo = this.shadowRoot.querySelector('.weather-info');
+                            if (currentWeatherInfo && this.currentLocationName) {
+                                const tempElement = this.shadowRoot.querySelector('.temp');
+                                if (tempElement && tempElement.textContent !== '--°') {
+                                    // Re-render to update day/night appearance
+                                    const outsideView = this.shadowRoot.querySelector('.outside-view');
+                                    const isNight = this.isNightTime();
+                                    
+                                    // Update classes based on current time
+                                    if (isNight && !outsideView.classList.contains('night')) {
+                                        outsideView.classList.add('night');
+                                    } else if (!isNight && outsideView.classList.contains('night')) {
+                                        outsideView.classList.remove('night');
+                                    }
+                                }
+                            }
                         }
                     }
-                }, 60000);
+                }, 60000); // Check every minute
             }
 
             render() {
@@ -846,4 +741,4 @@ class WeatherWidget extends HTMLElement {
         }
 
         customElements.define('weather-widget', WeatherWidget);
-   
+    
