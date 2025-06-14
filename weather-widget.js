@@ -161,6 +161,7 @@ class WeatherWidget extends HTMLElement {
     isNightTime() {
         if (!this.currentTimezone) {
             const hour = new Date().getHours();
+            console.log(`No timezone data, using fallback: hour ${hour}, isNight: ${hour >= 19 || hour < 6}`);
             return hour >= 19 || hour < 6;
         }
 
@@ -179,17 +180,25 @@ class WeatherWidget extends HTMLElement {
                 const sunsetTime = this.parseTimeString(this.sunsetTime);
                 const currentTime = this.parseTimeString(currentTimeStr);
                 
-                console.log(`Debug: Current: ${currentTimeStr} (${currentTime}), Sunrise: ${this.sunriseTime} (${sunriseTime}), Sunset: ${this.sunsetTime} (${sunsetTime})`);
+                const isNight = currentTime < sunriseTime || currentTime >= sunsetTime;
                 
-                return currentTime < sunriseTime || currentTime >= sunsetTime;
+                console.log(`🌅 Sunrise/Sunset Check:`);
+                console.log(`  Current: ${currentTimeStr} (${currentTime} mins)`);
+                console.log(`  Sunrise: ${this.sunriseTime} (${sunriseTime} mins)`);
+                console.log(`  Sunset: ${this.sunsetTime} (${sunsetTime} mins)`);
+                console.log(`  Is Night: ${isNight}`);
+                
+                return isNight;
             }
             
+            // Fallback to hour-based calculation
             const hour = parseInt(now.toLocaleTimeString('en-US', { 
                 timeZone: this.currentTimezone,
                 hour: 'numeric',
                 hour12: false 
             }).split(':')[0]);
             
+            console.log(`No sunrise/sunset data, using hour fallback: ${hour}, isNight: ${hour >= 19 || hour < 6}`);
             return hour >= 19 || hour < 6;
             
         } catch (error) {
@@ -203,12 +212,28 @@ class WeatherWidget extends HTMLElement {
         const [time, period] = timeStr.split(' ');
         const [hours, minutes] = time.split(':').map(Number);
         
-        let totalMinutes = (hours % 12) * 60 + minutes;
-        if (period === 'PM' && hours !== 12) {
-            totalMinutes += 12 * 60;
-        } else if (period === 'AM' && hours === 12) {
-            totalMinutes = minutes;
+        let totalMinutes;
+        
+        if (period === 'AM') {
+            if (hours === 12) {
+                // 12:xx AM = midnight hour (0:xx in 24-hour format)
+                totalMinutes = minutes;
+            } else {
+                // 1:xx AM to 11:xx AM
+                totalMinutes = hours * 60 + minutes;
+            }
+        } else { // PM
+            if (hours === 12) {
+                // 12:xx PM = noon hour (12:xx in 24-hour format)
+                totalMinutes = 12 * 60 + minutes;
+            } else {
+                // 1:xx PM to 11:xx PM = 13:xx to 23:xx in 24-hour format
+                totalMinutes = (hours + 12) * 60 + minutes;
+            }
         }
+        
+        // Debug logging - you can remove this later
+        console.log(`Time parsing: ${timeStr} → ${totalMinutes} minutes (${Math.floor(totalMinutes/60)}:${String(totalMinutes%60).padStart(2,'0')} 24hr)`);
         
         return totalMinutes;
     }
