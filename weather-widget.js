@@ -5,15 +5,16 @@ class WeatherWidget extends HTMLElement {
                 this.timeInterval = null;
                 this.currentTimezone = null;
                 this.currentLocationName = null;
+                this.loadingState = false;
             }
 
             static get observedAttributes() {
-                return ['location', 'units', 'theme'];
+                return ['location', 'units'];
             }
 
             connectedCallback() {
                 this.render();
-                this.fetchWeather();
+                this.loadWeatherData();
                 this.startTimeUpdates();
             }
 
@@ -24,12 +25,343 @@ class WeatherWidget extends HTMLElement {
             }
 
             attributeChangedCallback(name, oldValue, newValue) {
-                if (oldValue !== newValue) {
-                    if (name === 'theme') {
-                        this.render();
-                    }
-                    this.fetchWeather();
+                if (oldValue !== newValue && !this.loadingState) {
+                    this.loadWeatherData();
                 }
+            }
+
+            // Location database with coordinates and timezone info
+            getLocationData() {
+                return {
+                    'Tokyo, Japan': { 
+                        lat: 35.6762, lon: 139.6503, name: 'Tokyo', 
+                        timezone: 'Asia/Tokyo', country: 'Japan' 
+                    },
+                    'London, UK': { 
+                        lat: 51.5074, lon: -0.1278, name: 'London', 
+                        timezone: 'Europe/London', country: 'UK' 
+                    },
+                    'Sydney, Australia': { 
+                        lat: -33.8688, lon: 151.2093, name: 'Sydney', 
+                        timezone: 'Australia/Sydney', country: 'Australia' 
+                    },
+                    'Mumbai, India': { 
+                        lat: 19.0760, lon: 72.8777, name: 'Mumbai', 
+                        timezone: 'Asia/Kolkata', country: 'India' 
+                    },
+                    'Reykjavik, Iceland': { 
+                        lat: 64.1466, lon: -21.9426, name: 'Reykjavik', 
+                        timezone: 'Atlantic/Reykjavik', country: 'Iceland' 
+                    },
+                    'New York, NY': { 
+                        lat: 40.7128, lon: -74.0060, name: 'New York', 
+                        timezone: 'America/New_York', country: 'USA' 
+                    },
+                    'Los Angeles, CA': { 
+                        lat: 34.0522, lon: -118.2437, name: 'Los Angeles', 
+                        timezone: 'America/Los_Angeles', country: 'USA' 
+                    },
+                    'Paris, France': { 
+                        lat: 48.8566, lon: 2.3522, name: 'Paris', 
+                        timezone: 'Europe/Paris', country: 'France' 
+                    },
+                    'Berlin, Germany': { 
+                        lat: 52.5200, lon: 13.4050, name: 'Berlin', 
+                        timezone: 'Europe/Berlin', country: 'Germany' 
+                    },
+                    'Chicago, IL': { 
+                        lat: 41.8781, lon: -87.6298, name: 'Chicago', 
+                        timezone: 'America/Chicago', country: 'USA' 
+                    },
+                    '94513': { 
+                        lat: 37.9318, lon: -121.6958, name: 'Brentwood', 
+                        timezone: 'America/Los_Angeles', country: 'USA' 
+                    },
+                    '10001': { 
+                        lat: 40.7128, lon: -74.0060, name: 'New York', 
+                        timezone: 'America/New_York', country: 'USA' 
+                    },
+                    '90210': { 
+                        lat: 34.0901, lon: -118.4065, name: 'Beverly Hills', 
+                        timezone: 'America/Los_Angeles', country: 'USA' 
+                    }
+                };
+            }
+
+            async loadWeatherData() {
+                if (this.loadingState) return;
+                this.loadingState = true;
+
+                const location = this.getAttribute('location');
+                const units = this.getAttribute('units') || 'F';
+
+                if (!location) {
+                    this.loadingState = false;
+                    return;
+                }
+
+                console.log(`Loading weather for: ${location}`);
+
+                try {
+                    // Get location data
+                    const locationData = this.getLocationData()[location];
+                    
+                    if (!locationData) {
+                        throw new Error(`Location "${location}" not found in database`);
+                    }
+
+                    this.currentLocationName = locationData.name;
+                    this.currentTimezone = locationData.timezone;
+
+                    // Fetch weather data
+                    const weatherData = await this.fetchWeatherFromAPI(locationData, units);
+                    
+                    console.log(`Weather data loaded for ${location}:`, weatherData);
+                    
+                    this.displayWeather(weatherData);
+                    
+                } catch (error) {
+                    console.error(`Failed to load weather for ${location}:`, error);
+                    this.displayError(error.message);
+                } finally {
+                    this.loadingState = false;
+                }
+            }
+
+            async fetchWeatherFromAPI(locationData, units) {
+                const tempUnit = units === 'F' ? 'fahrenheit' : 'celsius';
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${locationData.lat}&longitude=${locationData.lon}&current_weather=true&temperature_unit=${tempUnit}&timezone=auto`;
+                
+                console.log(`Fetching weather from: ${url}`);
+
+                try {
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Weather API returned ${response.status}: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    console.log('Raw weather data:', data);
+
+                    if (!data.current_weather) {
+                        throw new Error('Invalid weather data received');
+                    }
+
+                    return this.parseWeatherData(data);
+                    
+                } catch (error) {
+                    console.error('Weather API error:', error);
+                    // Return mock data as fallback
+                    return this.getMockWeatherData(units);
+                }
+            }
+
+            parseWeatherData(data) {
+                const current = data.current_weather;
+                const condition = this.mapWeatherCode(current.weathercode);
+                
+                return {
+                    temperature: Math.round(current.temperature),
+                    condition: condition,
+                    windSpeed: Math.round(current.windspeed),
+                    timezone: data.timezone || this.currentTimezone
+                };
+            }
+
+            getMockWeatherData(units) {
+                console.log('Using mock weather data as fallback');
+                const temp = units === 'F' ? 72 : 22;
+                return {
+                    temperature: temp,
+                    condition: {
+                        name: 'Partly Cloudy',
+                        dayClass: 'partly-cloudy',
+                        nightClass: 'partly-cloudy',
+                        dayEffects: 'sun-clouds',
+                        nightEffects: 'moon-clouds'
+                    },
+                    windSpeed: 8,
+                    timezone: this.currentTimezone
+                };
+            }
+
+            mapWeatherCode(code) {
+                const conditions = {
+                    0: { name: 'Clear', dayClass: 'sunny', nightClass: 'sunny', dayEffects: 'sun', nightEffects: 'moon' },
+                    1: { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' },
+                    2: { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' },
+                    3: { name: 'Overcast', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' },
+                    45: { name: 'Foggy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' },
+                    48: { name: 'Foggy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' },
+                    51: { name: 'Light Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' },
+                    53: { name: 'Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' },
+                    55: { name: 'Heavy Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' },
+                    71: { name: 'Light Snow', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' },
+                    73: { name: 'Snow', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' },
+                    75: { name: 'Heavy Snow', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' },
+                    95: { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' },
+                    96: { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' },
+                    99: { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' }
+                };
+
+                return conditions[code] || conditions[1]; // Default to partly cloudy
+            }
+
+            isNightTime() {
+                if (!this.currentTimezone) {
+                    const hour = new Date().getHours();
+                    return hour >= 19 || hour < 6;
+                }
+
+                try {
+                    const now = new Date();
+                    const localTime = new Date(now.toLocaleString("en-US", { timeZone: this.currentTimezone }));
+                    const hour = localTime.getHours();
+                    return hour >= 19 || hour < 6;
+                } catch (error) {
+                    console.error('Timezone error:', error);
+                    const hour = new Date().getHours();
+                    return hour >= 19 || hour < 6;
+                }
+            }
+
+            getLocalTime() {
+                if (!this.currentTimezone) {
+                    return new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                }
+
+                try {
+                    const now = new Date();
+                    return now.toLocaleTimeString('en-US', {
+                        timeZone: this.currentTimezone,
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                } catch (error) {
+                    console.error('Time formatting error:', error);
+                    return new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                }
+            }
+
+            displayWeather(weatherData) {
+                const units = this.getAttribute('units') || 'F';
+                const tempUnit = units === 'F' ? '°F' : '°C';
+                const isNight = this.isNightTime();
+                
+                const weatherClass = isNight ? weatherData.condition.nightClass : weatherData.condition.dayClass;
+                const effects = isNight ? weatherData.condition.nightEffects : weatherData.condition.dayEffects;
+                
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                outsideView.className = `outside-view ${weatherClass}${isNight ? ' night' : ''}`;
+                
+                const localTime = this.getLocalTime();
+                const conditionName = isNight && weatherData.condition.name === 'Clear' ? 'Clear Night' : 
+                                    !isNight && weatherData.condition.name === 'Clear' ? 'Sunny' : 
+                                    weatherData.condition.name;
+
+                this.shadowRoot.querySelector('.weather-info').innerHTML = `
+                    <div class="location">${this.currentLocationName || 'Unknown'}</div>
+                    <div class="temp">${weatherData.temperature}${tempUnit}</div>
+                    <div class="condition">${conditionName}</div>
+                    <div class="local-time">${localTime}</div>
+                `;
+
+                this.addWeatherEffects(effects);
+            }
+
+            displayError(message) {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                outsideView.innerHTML = `<div class="loading">Error: ${message}</div>`;
+                
+                this.shadowRoot.querySelector('.weather-info').innerHTML = `
+                    <div class="location">${this.currentLocationName || this.getAttribute('location') || 'Unknown'}</div>
+                    <div class="temp">--°</div>
+                    <div class="condition">Unable to load</div>
+                    <div class="local-time">${this.getLocalTime()}</div>
+                `;
+            }
+
+            addWeatherEffects(effects) {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                
+                switch(effects) {
+                    case 'sun':
+                        outsideView.innerHTML = '<div class="sun"></div>';
+                        break;
+                    case 'moon':
+                        outsideView.innerHTML = '<div class="moon"></div>';
+                        break;
+                    case 'clouds':
+                        outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div>';
+                        break;
+                    case 'sun-clouds':
+                        outsideView.innerHTML = '<div class="sun"></div><div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
+                        break;
+                    case 'moon-clouds':
+                        outsideView.innerHTML = '<div class="moon"></div><div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
+                        break;
+                    case 'rain':
+                        outsideView.innerHTML = '';
+                        this.createRain();
+                        break;
+                    case 'snow':
+                        outsideView.innerHTML = '';
+                        this.createSnow();
+                        break;
+                    case 'lightning':
+                        outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="lightning">⚡</div>';
+                        this.createRain();
+                        break;
+                }
+            }
+
+            createRain() {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                for (let i = 0; i < 20; i++) {
+                    const drop = document.createElement('div');
+                    drop.className = 'rain-drop';
+                    drop.style.left = Math.random() * 100 + '%';
+                    drop.style.width = '4px';
+                    drop.style.height = '12px';
+                    drop.style.animationDuration = (Math.random() * 0.3 + 0.4) + 's';
+                    drop.style.animationDelay = Math.random() * 1.5 + 's';
+                    outsideView.appendChild(drop);
+                }
+            }
+
+            createSnow() {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                for (let i = 0; i < 25; i++) {
+                    const flake = document.createElement('div');
+                    flake.className = 'snow-flake';
+                    flake.textContent = '❄';
+                    flake.style.left = Math.random() * 100 + '%';
+                    flake.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                    flake.style.animationDelay = Math.random() * 1.5 + 's';
+                    outsideView.appendChild(flake);
+                }
+            }
+
+            startTimeUpdates() {
+                this.timeInterval = setInterval(() => {
+                    const timeElement = this.shadowRoot.querySelector('.local-time');
+                    if (timeElement && this.currentTimezone) {
+                        const newTime = this.getLocalTime();
+                        if (timeElement.textContent !== newTime) {
+                            timeElement.textContent = newTime;
+                        }
+                    }
+                }, 60000); // Update every minute
             }
 
             render() {
@@ -384,17 +716,18 @@ class WeatherWidget extends HTMLElement {
                             font-size: 14px;
                             text-align: center;
                             padding: 10px;
+                            max-width: 200px;
                         }
                     </style>
                     
                     <div class="window">
                         <div class="outside-view cloudy">
-                            <div class="loading">Looking outside...</div>
+                            <div class="loading">Loading weather...</div>
                         </div>
                         <div class="glass-overlay"></div>
                         <div class="window-frame"></div>
                         <div class="weather-info">
-                            <div class="location">${this.getDisplayName(location)}</div>
+                            <div class="location">${location.split(',')[0]}</div>
                             <div class="temp">--°</div>
                             <div class="condition">Loading...</div>
                             <div class="local-time">--:--</div>
@@ -402,380 +735,7 @@ class WeatherWidget extends HTMLElement {
                     </div>
                 `;
             }
-
-            async fetchWeather() {
-                const location = this.getAttribute('location');
-                const units = this.getAttribute('units') || 'F';
-                
-                if (!location) return;
-
-                console.log('Initializing widget for location:', location);
-
-                try {
-                    const weatherData = await this.getWeatherData(location, units);
-                    this.displayWeather(weatherData);
-                } catch (error) {
-                    console.error('Weather fetch error:', error);
-                    
-                    // Try again after a short delay
-                    setTimeout(async () => {
-                        try {
-                            console.log('Retrying weather fetch for:', location);
-                            const weatherData = await this.getWeatherData(location, units);
-                            this.displayWeather(weatherData);
-                        } catch (retryError) {
-                            console.error('Retry failed:', retryError);
-                            this.displayError(retryError.message);
-                        }
-                    }, 2000);
-                    
-                    this.displayError(error.message);
-                }
-            }
-
-            async getWeatherData(location, units) {
-                try {
-                    // Get coordinates for the location
-                    const geocodeData = await this.geocodeLocation(location);
-                    console.log('Got coordinates:', geocodeData);
-                    
-                    // Fetch weather from Open-Meteo (includes timezone info)
-                    const tempUnit = units === 'F' ? 'fahrenheit' : 'celsius';
-                    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${geocodeData.coords.lat}&longitude=${geocodeData.coords.lon}&current_weather=true&temperature_unit=${tempUnit}&windspeed_unit=mph&timezone=auto`;
-                    console.log('Fetching weather from:', weatherUrl);
-                    
-                    const response = await fetch(weatherUrl);
-                    
-                    if (!response.ok) {
-                        console.error('Weather API response not ok:', response.status, response.statusText);
-                        throw new Error(`Weather API error: ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    console.log('Weather data received:', data);
-                    
-                    // Store timezone and location info for time display
-                    this.currentTimezone = data.timezone;
-                    this.currentLocationName = geocodeData.displayName;
-                    
-                    return this.mapOpenMeteoData(data, units);
-                    
-                } catch (error) {
-                    console.error('Weather fetch error details:', error);
-                    throw new Error(`Failed to get weather data: ${error.message}`);
-                }
-            }
-
-            async geocodeLocation(location) {
-                try {
-                    // First try a fallback for common locations to avoid CORS issues
-                    const fallbackCoords = this.getFallbackCoordinates(location);
-                    if (fallbackCoords) {
-                        console.log('Using fallback coordinates for:', location);
-                        return fallbackCoords;
-                    }
-
-                    // Use OpenStreetMap Nominatim (free, no API key) with proper headers
-                    const response = await fetch(
-                        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&addressdetails=1`,
-                        {
-                            headers: {
-                                'User-Agent': 'WeatherWidget/1.0'
-                            }
-                        }
-                    );
-                    
-                    if (!response.ok) {
-                        console.error('Geocoding response not ok:', response.status, response.statusText);
-                        throw new Error(`Geocoding failed: ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    console.log('Geocoding response:', data);
-                    
-                    if (!data || data.length === 0) {
-                        throw new Error('Location not found');
-                    }
-                    
-                    const result = data[0];
-                    
-                    return {
-                        coords: {
-                            lat: parseFloat(result.lat),
-                            lon: parseFloat(result.lon)
-                        },
-                        displayName: this.extractDisplayName(result)
-                    };
-                    
-                } catch (error) {
-                    console.error('Geocoding error details:', error);
-                    // Try fallback coordinates one more time
-                    const fallbackCoords = this.getFallbackCoordinates(location);
-                    if (fallbackCoords) {
-                        console.log('Using fallback coordinates after error for:', location);
-                        return fallbackCoords;
-                    }
-                    throw new Error(`Geocoding error: ${error.message}`);
-                }
-            }
-
-            getFallbackCoordinates(location) {
-                const coords = {
-                    'Tokyo, Japan': { lat: 35.6762, lon: 139.6503, name: 'Tokyo' },
-                    'London, UK': { lat: 51.5074, lon: -0.1278, name: 'London' },
-                    'Sydney, Australia': { lat: -33.8688, lon: 151.2093, name: 'Sydney' },
-                    'Mumbai, India': { lat: 19.0760, lon: 72.8777, name: 'Mumbai' },
-                    'Reykjavik, Iceland': { lat: 64.1466, lon: -21.9426, name: 'Reykjavik' },
-                    'New York, NY': { lat: 40.7128, lon: -74.0060, name: 'New York' },
-                    'Los Angeles, CA': { lat: 34.0522, lon: -118.2437, name: 'Los Angeles' },
-                    'Paris, France': { lat: 48.8566, lon: 2.3522, name: 'Paris' },
-                    'Berlin, Germany': { lat: 52.5200, lon: 13.4050, name: 'Berlin' },
-                    '94513': { lat: 37.9318, lon: -121.6958, name: 'Brentwood' }
-                };
-
-                if (coords[location]) {
-                    const coord = coords[location];
-                    return {
-                        coords: { lat: coord.lat, lon: coord.lon },
-                        displayName: coord.name
-                    };
-                }
-
-                return null;
-            }
-
-            extractDisplayName(geocodeResult) {
-                // Extract a clean display name from geocode result
-                const address = geocodeResult.address;
-                if (!address) {
-                    return geocodeResult.display_name.split(',')[0].trim();
-                }
-                
-                // Prioritize city, town, village, etc.
-                return address.city || 
-                       address.town || 
-                       address.village || 
-                       address.municipality || 
-                       address.county || 
-                       address.state || 
-                       geocodeResult.display_name.split(',')[0].trim();
-            }
-
-            mapOpenMeteoData(data, units) {
-                const current = data.current_weather;
-                
-                // Map weather codes to our conditions
-                const weatherCode = current.weathercode;
-                const condition = this.mapWeatherCode(weatherCode);
-                
-                return {
-                    main: {
-                        temp: current.temperature
-                    },
-                    condition: condition,
-                    wind: {
-                        speed: Math.round(current.windspeed)
-                    },
-                    timezone: data.timezone
-                };
-            }
-
-            mapWeatherCode(code) {
-                // Open-Meteo weather codes: https://open-meteo.com/en/docs
-                if (code === 0) return { name: 'Clear', dayClass: 'sunny', nightClass: 'sunny', dayEffects: 'sun', nightEffects: 'moon' };
-                if (code >= 1 && code <= 3) return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
-                if (code >= 45 && code <= 48) return { name: 'Cloudy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' };
-                if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: 'Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' };
-                if (code >= 71 && code <= 77) return { name: 'Snow Showers', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' };
-                if (code >= 95 && code <= 99) return { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' };
-                
-                // Default to partly cloudy
-                return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
-            }
-
-            displayWeather(data) {
-                const units = this.getAttribute('units') || 'F';
-                const tempUnit = units === 'F' ? '°F' : '°C';
-                
-                // Check if it's nighttime using the actual timezone
-                const isNight = this.isNightTime();
-                const weatherClass = isNight ? data.condition.nightClass : data.condition.dayClass;
-                const effects = isNight ? data.condition.nightEffects : data.condition.dayEffects;
-                
-                // Update the outside view with day/night class
-                const outsideView = this.shadowRoot.querySelector('.outside-view');
-                outsideView.className = `outside-view ${weatherClass}${isNight ? ' night' : ''}`;
-                
-                // Get local time for the location
-                const localTime = this.getLocalTime();
-                const displayName = isNight ? 
-                    (data.condition.name === 'Clear' ? 'Clear Night' : data.condition.name) :
-                    (data.condition.name === 'Clear' ? 'Sunny' : data.condition.name);
-                
-                this.shadowRoot.querySelector('.weather-info').innerHTML = `
-                    <div class="location">${this.currentLocationName || 'Unknown'}</div>
-                    <div class="temp">${Math.round(data.main.temp)}${tempUnit}</div>
-                    <div class="condition">${displayName}</div>
-                    <div class="local-time">${localTime}</div>
-                `;
-                
-                this.addWeatherEffects(effects, isNight);
-            }
-
-            isNightTime() {
-                if (!this.currentTimezone) {
-                    // Fallback to local time if no timezone available
-                    const hour = new Date().getHours();
-                    return hour >= 19 || hour < 6;
-                }
-                
-                try {
-                    const now = new Date();
-                    const localTime = new Date(now.toLocaleString("en-US", {timeZone: this.currentTimezone}));
-                    const hour = localTime.getHours();
-                    // Night time is from 7 PM to 6 AM
-                    return hour >= 19 || hour < 6;
-                } catch (error) {
-                    console.error('Timezone error:', error);
-                    // Fallback to local time
-                    const hour = new Date().getHours();
-                    return hour >= 19 || hour < 6;
-                }
-            }
-
-            getLocalTime() {
-                if (!this.currentTimezone) {
-                    return new Date().toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                    });
-                }
-                
-                try {
-                    const now = new Date();
-                    return now.toLocaleTimeString('en-US', {
-                        timeZone: this.currentTimezone,
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                    });
-                } catch (error) {
-                    console.error('Timezone error:', error, 'Timezone:', this.currentTimezone);
-                    
-                    // Fallback to local time
-                    return new Date().toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                    });
-                }
-            }
-
-            getDisplayName(location) {
-                // Simple fallback for initial display before API call
-                if (location && location.includes(',')) {
-                    return location.split(',')[0].trim();
-                }
-                return location || 'Unknown';
-            }
-
-            addWeatherEffects(effects, isNight = false) {
-                const outsideView = this.shadowRoot.querySelector('.outside-view');
-                
-                switch(effects) {
-                    case 'sun':
-                        outsideView.innerHTML = '<div class="sun"></div>';
-                        break;
-                    case 'moon':
-                        outsideView.innerHTML = '<div class="moon"></div>';
-                        break;
-                    case 'clouds':
-                        outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div>';
-                        break;
-                    case 'sun-clouds':
-                        outsideView.innerHTML = '<div class="sun"></div><div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
-                        break;
-                    case 'moon-clouds':
-                        outsideView.innerHTML = '<div class="moon"></div><div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
-                        break;
-                    case 'rain':
-                        outsideView.innerHTML = '';
-                        this.createRain();
-                        break;
-                    case 'snow':
-                        outsideView.innerHTML = '';
-                        this.createSnow();
-                        break;
-                    case 'lightning':
-                        outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="lightning">⚡</div>';
-                        this.createRain();
-                        break;
-                }
-            }
-
-            createRain() {
-                const outsideView = this.shadowRoot.querySelector('.outside-view');
-                for (let i = 0; i < 20; i++) {
-                    const drop = document.createElement('div');
-                    drop.className = 'rain-drop';
-                    drop.style.left = Math.random() * 100 + '%';
-                    drop.style.width = '4px';
-                    drop.style.height = '12px';
-                    drop.style.animationDuration = (Math.random() * 0.3 + 0.4) + 's';
-                    drop.style.animationDelay = Math.random() * 1.5 + 's';
-                    outsideView.appendChild(drop);
-                }
-            }
-
-            createSnow() {
-                const outsideView = this.shadowRoot.querySelector('.outside-view');
-                for (let i = 0; i < 25; i++) {
-                    const flake = document.createElement('div');
-                    flake.className = 'snow-flake';
-                    flake.textContent = '❄';
-                    flake.style.left = Math.random() * 100 + '%';
-                    flake.style.animationDuration = (Math.random() * 2 + 2) + 's';
-                    flake.style.animationDelay = Math.random() * 1.5 + 's';
-                    outsideView.appendChild(flake);
-                }
-            }
-
-            displayError(errorMessage = 'Connection lost') {
-                const outsideView = this.shadowRoot.querySelector('.outside-view');
-                outsideView.innerHTML = `<div class="loading">${errorMessage}</div>`;
-                
-                this.shadowRoot.querySelector('.weather-info').innerHTML = `
-                    <div class="location">${this.currentLocationName || this.getDisplayName(this.getAttribute('location'))}</div>
-                    <div class="temp">--°</div>
-                    <div class="condition">Unable to load</div>
-                    <div class="local-time">${new Date().toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                    })}</div>
-                `;
-            }
-
-            startTimeUpdates() {
-                // Update time every minute and check for day/night changes
-                this.timeInterval = setInterval(() => {
-                    const timeElement = this.shadowRoot.querySelector('.local-time');
-                    if (timeElement && timeElement.textContent !== '--:--' && this.currentTimezone) {
-                        timeElement.textContent = this.getLocalTime();
-                        
-                        // Check if day/night status has changed
-                        const currentIsNight = this.isNightTime();
-                        const outsideView = this.shadowRoot.querySelector('.outside-view');
-                        const wasNight = outsideView.classList.contains('night');
-                        
-                        if (currentIsNight !== wasNight) {
-                            // Day/night changed, refresh the weather display
-                            this.fetchWeather();
-                        }
-                    }
-                }, 60000);
-            }
         }
 
+        // Register the custom element
         customElements.define('weather-widget', WeatherWidget);
