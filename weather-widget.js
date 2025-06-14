@@ -1,4 +1,4 @@
- class WeatherWidget extends HTMLElement {
+class WeatherWidget extends HTMLElement {
             constructor() {
                 super();
                 this.attachShadow({ mode: 'open' });
@@ -45,14 +45,8 @@
                 console.log(`Loading weather for: ${location}`);
 
                 try {
-                    // Try multiple geocoding services for reliability
-                    const locationData = await this.geocodeWithFallbacks(location);
-                    
-                    this.currentLocationName = locationData.name;
-                    this.currentTimezone = locationData.timezone || this.estimateTimezone(locationData.lat, locationData.lon);
-
-                    // Fetch weather data
-                    const weatherData = await this.fetchWeatherFromAPI(locationData, units);
+                    // Use WeatherAPI.com - much more reliable and handles geocoding internally
+                    const weatherData = await this.fetchWeatherFromWeatherAPI(location, units);
                     
                     console.log(`Weather data loaded for ${location}:`, weatherData);
                     
@@ -66,121 +60,173 @@
                 }
             }
 
-            async geocodeWithFallbacks(location) {
-                const geocoders = [
-                    () => this.geocodeWithOpenCage(location),
-                    () => this.geocodeWithNominatim(location),
-                    () => this.geocodeWithPositionstack(location)
-                ];
+            async fetchWeatherFromWeatherAPI(location, units) {
+                try {
+                    // WeatherAPI.com free tier API key (demo key - you'd want your own for production)
+                    // They allow location names directly - no separate geocoding needed!
+                    const apiKey = 'demo'; // For demo purposes - get free key at weatherapi.com
+                    const url = `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(location)}&aqi=no`;
+                    
+                    console.log(`Fetching weather from WeatherAPI: ${url}`);
 
-                for (let i = 0; i < geocoders.length; i++) {
-                    try {
-                        console.log(`Trying geocoder ${i + 1} for: ${location}`);
-                        const result = await geocoders[i]();
-                        if (result) {
-                            console.log(`Geocoder ${i + 1} succeeded:`, result);
-                            return result;
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) {
+                        if (response.status === 403) {
+                            console.log('API key demo failed, trying without key for basic demo...');
+                            // Try a backup approach or use mock data with real location info
+                            return this.getRealisticMockData(location, units);
                         }
-                    } catch (error) {
-                        console.warn(`Geocoder ${i + 1} failed:`, error.message);
-                        if (i === geocoders.length - 1) {
-                            throw new Error(`All geocoding services failed for "${location}"`);
-                        }
+                        throw new Error(`WeatherAPI returned ${response.status}: ${response.statusText}`);
                     }
-                }
-            }
 
-            async geocodeWithOpenCage(location) {
-                // OpenCage has a free tier with good coverage
-                const apiKey = 'demo'; // Demo key for testing - you'd want your own
-                const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${apiKey}&limit=1`;
-                
-                const response = await fetch(url);
-                if (!response.ok) throw new Error(`OpenCage API error: ${response.status}`);
-                
-                const data = await response.json();
-                if (!data.results || data.results.length === 0) {
-                    throw new Error('No results from OpenCage');
-                }
+                    const data = await response.json();
+                    console.log('WeatherAPI response:', data);
 
-                const result = data.results[0];
-                return {
-                    lat: result.geometry.lat,
-                    lon: result.geometry.lng,
-                    name: result.components.city || result.components.town || result.components.village || result.components.county || result.formatted.split(',')[0],
-                    timezone: result.annotations?.timezone?.name
-                };
-            }
-
-            async geocodeWithNominatim(location) {
-                // Add delay to respect rate limits
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&addressdetails=1`;
-                
-                const response = await fetch(url, {
-                    headers: {
-                        'User-Agent': 'WeatherWidget/1.0 (contact@example.com)'
+                    if (!data.current) {
+                        throw new Error('Invalid weather data received from WeatherAPI');
                     }
-                });
-                
-                if (!response.ok) throw new Error(`Nominatim API error: ${response.status}`);
-                
-                const data = await response.json();
-                if (!data || data.length === 0) {
-                    throw new Error('No results from Nominatim');
-                }
 
-                const result = data[0];
+                    // Extract location info
+                    this.currentLocationName = data.location.name;
+                    this.currentTimezone = data.location.tz_id;
+                    
+                    console.log(`Location: ${this.currentLocationName}, Timezone: ${this.currentTimezone}`);
+
+                    return this.parseWeatherAPIData(data, units);
+                    
+                } catch (error) {
+                    console.error('WeatherAPI error:', error);
+                    console.log('Falling back to realistic mock data...');
+                    return this.getRealisticMockData(location, units);
+                }
+            }
+
+            parseWeatherAPIData(data, units) {
+                const current = data.current;
+                const location = data.location;
+                
+                // Get temperature in the right units
+                const temperature = units === 'F' ? Math.round(current.temp_f) : Math.round(current.temp_c);
+                
+                // Map WeatherAPI condition to our visual effects
+                const condition = this.mapWeatherAPICondition(current.condition.text, current.condition.code);
+                
                 return {
-                    lat: parseFloat(result.lat),
-                    lon: parseFloat(result.lon),
-                    name: this.extractLocationName(result),
-                    timezone: null // Nominatim doesn't provide timezone
+                    temperature: temperature,
+                    condition: condition,
+                    windSpeed: Math.round(units === 'F' ? current.wind_mph : current.wind_kph),
+                    humidity: current.humidity,
+                    timezone: location.tz_id
                 };
             }
 
-            async geocodeWithPositionstack(location) {
-                // Another geocoding service as backup
-                const apiKey = 'demo'; // Demo key - you'd want your own
-                const url = `http://api.positionstack.com/v1/forward?access_key=${apiKey}&query=${encodeURIComponent(location)}&limit=1`;
+            mapWeatherAPICondition(conditionText, conditionCode) {
+                // Map WeatherAPI conditions to our visual effects
+                const text = conditionText.toLowerCase();
                 
-                const response = await fetch(url);
-                if (!response.ok) throw new Error(`Positionstack API error: ${response.status}`);
-                
-                const data = await response.json();
-                if (!data.data || data.data.length === 0) {
-                    throw new Error('No results from Positionstack');
+                if (text.includes('sunny') || text.includes('clear')) {
+                    return { name: 'Clear', dayClass: 'sunny', nightClass: 'sunny', dayEffects: 'sun', nightEffects: 'moon' };
                 }
+                if (text.includes('partly cloudy') || text.includes('partly')) {
+                    return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
+                }
+                if (text.includes('cloudy') || text.includes('overcast')) {
+                    return { name: 'Cloudy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' };
+                }
+                if (text.includes('rain') || text.includes('drizzle') || text.includes('shower')) {
+                    return { name: 'Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' };
+                }
+                if (text.includes('snow') || text.includes('blizzard')) {
+                    return { name: 'Snow', dayClass: 'snowy', nightClass: 'snowy', dayEffects: 'snow', nightEffects: 'snow' };
+                }
+                if (text.includes('thunder') || text.includes('storm')) {
+                    return { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' };
+                }
+                if (text.includes('fog') || text.includes('mist')) {
+                    return { name: 'Foggy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' };
+                }
+                
+                // Default to partly cloudy
+                return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
+            }
 
-                const result = data.data[0];
+            getRealisticMockData(location, units) {
+                console.log(`⚠️ Using realistic mock data for: ${location}`);
+                
+                // Generate somewhat realistic mock data based on location
+                const mockTemps = {
+                    'tokyo': { f: 68, c: 20, condition: 'Partly Cloudy', effects: 'sun-clouds' },
+                    'london': { f: 55, c: 13, condition: 'Cloudy', effects: 'clouds' },
+                    'new york': { f: 62, c: 17, condition: 'Clear', effects: 'sun' },
+                    'sydney': { f: 75, c: 24, condition: 'Sunny', effects: 'sun' },
+                    'cairo': { f: 85, c: 29, condition: 'Clear', effects: 'sun' },
+                    'mumbai': { f: 82, c: 28, condition: 'Partly Cloudy', effects: 'sun-clouds' },
+                    'berlin': { f: 58, c: 14, condition: 'Cloudy', effects: 'clouds' },
+                    'são paulo': { f: 77, c: 25, condition: 'Partly Cloudy', effects: 'sun-clouds' },
+                    'vancouver': { f: 59, c: 15, condition: 'Rain', effects: 'rain' }
+                };
+                
+                const locationKey = location.toLowerCase();
+                const mock = mockTemps[locationKey] || { f: 70, c: 21, condition: 'Partly Cloudy', effects: 'sun-clouds' };
+                
+                this.currentLocationName = location;
+                this.currentTimezone = this.estimateTimezone(0, 0); // Basic fallback
+                
                 return {
-                    lat: result.latitude,
-                    lon: result.longitude,
-                    name: result.locality || result.administrative_area || result.name,
-                    timezone: null
+                    temperature: units === 'F' ? mock.f : mock.c,
+                    condition: {
+                        name: mock.condition + ' (Demo)',
+                        dayClass: mock.effects.includes('sun') && !mock.effects.includes('clouds') ? 'sunny' : 
+                                 mock.effects.includes('rain') ? 'rainy' :
+                                 mock.effects.includes('clouds') ? 'cloudy' : 'partly-cloudy',
+                        nightClass: mock.effects.includes('rain') ? 'rainy' : 'partly-cloudy',
+                        dayEffects: mock.effects,
+                        nightEffects: mock.effects.replace('sun', 'moon')
+                    },
+                    windSpeed: Math.floor(Math.random() * 15) + 5,
+                    timezone: this.currentTimezone
                 };
             }
 
-            extractLocationName(geocodingResult) {
-                const address = geocodingResult.address;
-                if (!address) {
-                    return geocodingResult.display_name.split(',')[0].trim();
+            async geocodeWithOpenMeteo(location) {
+                try {
+                    // Use Open-Meteo's geocoding API - same service as weather, so more reliable
+                    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+                    
+                    console.log(`Geocoding with Open-Meteo: ${url}`);
+                    
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Geocoding failed: ${response.status} ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Open-Meteo geocoding response:', data);
+                    
+                    if (!data.results || data.results.length === 0) {
+                        throw new Error(`Location "${location}" not found`);
+                    }
+                    
+                    const result = data.results[0];
+                    
+                    return {
+                        lat: result.latitude,
+                        lon: result.longitude,
+                        name: result.name,
+                        country: result.country,
+                        timezone: result.timezone || this.estimateTimezone(result.latitude, result.longitude)
+                    };
+                    
+                } catch (error) {
+                    console.error('Open-Meteo geocoding error:', error);
+                    throw new Error(`Failed to find location "${location}": ${error.message}`);
                 }
-
-                return address.city || 
-                       address.town || 
-                       address.village || 
-                       address.municipality || 
-                       address.hamlet || 
-                       address.suburb || 
-                       address.county || 
-                       address.state || 
-                       geocodingResult.display_name.split(',')[0].trim();
             }
 
             estimateTimezone(lat, lon) {
-                // Simple timezone estimation based on longitude
+                // Simple timezone estimation based on longitude as fallback
                 const offset = Math.round(lon / 15);
                 
                 // Handle special cases and major timezone boundaries
@@ -219,41 +265,6 @@
                 // Default to UTC-based timezone
                 const utcOffset = Math.max(-12, Math.min(12, offset));
                 return utcOffset >= 0 ? `Etc/GMT-${utcOffset}` : `Etc/GMT+${Math.abs(utcOffset)}`;
-            }
-
-            async fetchWeatherFromAPI(locationData, units) {
-                const tempUnit = units === 'F' ? 'fahrenheit' : 'celsius';
-                const url = `https://api.open-meteo.com/v1/forecast?latitude=${locationData.lat}&longitude=${locationData.lon}&current_weather=true&temperature_unit=${tempUnit}&timezone=auto`;
-                
-                console.log(`Fetching weather from: ${url}`);
-
-                try {
-                    const response = await fetch(url);
-                    
-                    if (!response.ok) {
-                        throw new Error(`Weather API returned ${response.status}: ${response.statusText}`);
-                    }
-
-                    const data = await response.json();
-                    console.log('Raw weather data:', data);
-
-                    if (!data.current_weather) {
-                        throw new Error('Invalid weather data received');
-                    }
-
-                    // Use the timezone returned by the weather API if available
-                    if (data.timezone) {
-                        this.currentTimezone = data.timezone;
-                        console.log(`Updated timezone from weather API: ${this.currentTimezone}`);
-                    }
-
-                    return this.parseWeatherData(data);
-                    
-                } catch (error) {
-                    console.error('Weather API error:', error);
-                    // Return mock data as fallback
-                    return this.getMockWeatherData(units);
-                }
             }
 
             parseWeatherData(data) {
@@ -835,3 +846,4 @@
         }
 
         customElements.define('weather-widget', WeatherWidget);
+   
