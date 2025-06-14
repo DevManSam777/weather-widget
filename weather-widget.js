@@ -3,6 +3,7 @@ class WeatherWidget extends HTMLElement {
         super();
         this.attachShadow({ mode: 'open' });
         this.timeInterval = null;
+        this.weatherInterval = null;
         this.currentTimezone = null;
         this.currentLocationName = null;
         this.loadingState = false;
@@ -18,11 +19,15 @@ class WeatherWidget extends HTMLElement {
         this.render();
         this.loadWeatherData();
         this.startTimeUpdates();
+        this.startWeatherUpdates();
     }
 
     disconnectedCallback() {
         if (this.timeInterval) {
             clearInterval(this.timeInterval);
+        }
+        if (this.weatherInterval) {
+            clearInterval(this.weatherInterval);
         }
     }
 
@@ -59,7 +64,6 @@ class WeatherWidget extends HTMLElement {
     }
 
     async fetchWeatherFromWeatherAPI(location, units) {
-        // WeatherAPI.com free tier API key - replace with your own for production
         const apiKey = '595f7617e8694a44abe15716251406';
         const currentUrl = `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(location)}&aqi=no`;
         const astronomyUrl = `https://api.weatherapi.com/v1/astronomy.json?key=${apiKey}&q=${encodeURIComponent(location)}`;
@@ -67,7 +71,6 @@ class WeatherWidget extends HTMLElement {
         console.log(`Fetching weather from WeatherAPI: ${currentUrl}`);
 
         try {
-            // Fetch both current weather and astronomy data
             const [weatherResponse, astronomyResponse] = await Promise.all([
                 fetch(currentUrl),
                 fetch(astronomyUrl)
@@ -79,7 +82,6 @@ class WeatherWidget extends HTMLElement {
 
             const weatherData = await weatherResponse.json();
             
-            // Debug: Log the actual API response
             console.log('Raw WeatherAPI response:', weatherData);
             console.log('Temperature F:', weatherData.current.temp_f);
             console.log('Temperature C:', weatherData.current.temp_c);
@@ -88,11 +90,9 @@ class WeatherWidget extends HTMLElement {
                 throw new Error('Invalid weather data received from WeatherAPI');
             }
 
-            // Extract location info
             this.currentLocationName = weatherData.location.name;
             this.currentTimezone = weatherData.location.tz_id;
             
-            // Extract astronomy data if available
             if (astronomyResponse.ok) {
                 const astronomyData = await astronomyResponse.json();
                 if (astronomyData.astronomy && astronomyData.astronomy.astro) {
@@ -114,12 +114,8 @@ class WeatherWidget extends HTMLElement {
 
     parseWeatherAPIData(data, units) {
         const current = data.current;
-        
-        // Get temperature in the right units
         const temperature = units === 'F' ? Math.round(current.temp_f) : Math.round(current.temp_c);
-        
-        // Map WeatherAPI condition to our visual effects
-        const condition = this.mapWeatherAPICondition(current.condition.text, current.condition.code, current.wind_kph); // Pass wind speed
+        const condition = this.mapWeatherAPICondition(current.condition.text, current.condition.code, current.wind_kph);
         
         return {
             temperature: temperature,
@@ -130,7 +126,7 @@ class WeatherWidget extends HTMLElement {
         };
     }
 
-    mapWeatherAPICondition(conditionText, conditionCode, windKph) { // Added windKph parameter
+    mapWeatherAPICondition(conditionText, conditionCode, windKph) {
         const text = conditionText.toLowerCase();
         
         if (text.includes('sunny') || text.includes('clear')) {
@@ -140,7 +136,7 @@ class WeatherWidget extends HTMLElement {
             return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
         }
         if (text.includes('cloudy') || text.includes('overcast')) {
-            return { name: 'Cloudy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'more-clouds', nightEffects: 'more-clouds' }; // More clouds
+            return { name: 'Cloudy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'more-clouds', nightEffects: 'more-clouds' };
         }
         if (text.includes('rain') || text.includes('drizzle') || text.includes('shower')) {
             return { name: 'Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' };
@@ -152,21 +148,18 @@ class WeatherWidget extends HTMLElement {
             return { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' };
         }
         if (text.includes('fog') || text.includes('mist')) {
-            return { name: 'Foggy', dayClass: 'foggy', nightClass: 'foggy', dayEffects: 'fog', nightEffects: 'fog' }; // Distinct foggy
+            return { name: 'Foggy', dayClass: 'foggy', nightClass: 'foggy', dayEffects: 'fog', nightEffects: 'fog' };
         }
         
-        // Check for windy conditions based on wind speed (e.g., > 20 kph)
         if (windKph > 20) { 
-            return { name: 'Windy', dayClass: 'windy', nightClass: 'windy', dayEffects: 'windy-effects', nightEffects: 'windy-effects' }; // Distinct windy
+            return { name: 'Windy', dayClass: 'windy', nightClass: 'windy', dayEffects: 'windy-effects', nightEffects: 'windy-effects' };
         }
 
-        // Default to partly cloudy
         return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
     }
 
     isNightTime() {
         if (!this.currentTimezone) {
-            // Fallback to basic hour check if no timezone
             const hour = new Date().getHours();
             return hour >= 19 || hour < 6;
         }
@@ -174,9 +167,7 @@ class WeatherWidget extends HTMLElement {
         try {
             const now = new Date();
             
-            // If we have sunrise/sunset times, use those
             if (this.sunriseTime && this.sunsetTime) {
-                // ✅ FIX: Get the time string directly with the correct timezone
                 const currentTimeStr = now.toLocaleTimeString('en-US', { 
                     timeZone: this.currentTimezone,
                     hour12: true, 
@@ -190,11 +181,9 @@ class WeatherWidget extends HTMLElement {
                 
                 console.log(`Debug: Current: ${currentTimeStr} (${currentTime}), Sunrise: ${this.sunriseTime} (${sunriseTime}), Sunset: ${this.sunsetTime} (${sunsetTime})`);
                 
-                // Night time is before sunrise or after sunset
                 return currentTime < sunriseTime || currentTime >= sunsetTime;
             }
             
-            // Fallback to basic hour check using the correct timezone
             const hour = parseInt(now.toLocaleTimeString('en-US', { 
                 timeZone: this.currentTimezone,
                 hour: 'numeric',
@@ -211,7 +200,6 @@ class WeatherWidget extends HTMLElement {
     }
 
     parseTimeString(timeStr) {
-        // Convert time string like "06:30 AM" to minutes since midnight
         const [time, period] = timeStr.split(' ');
         const [hours, minutes] = time.split(':').map(Number);
         
@@ -292,7 +280,7 @@ class WeatherWidget extends HTMLElement {
 
     addWeatherEffects(effects) {
         const outsideView = this.shadowRoot.querySelector('.outside-view');
-        outsideView.innerHTML = ''; // Clear previous effects
+        outsideView.innerHTML = '';
         
         switch(effects) {
             case 'sun':
@@ -309,7 +297,7 @@ class WeatherWidget extends HTMLElement {
                 outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div>';
                 break;
             case 'more-clouds':
-                outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div><div class="cloud cloud-4"></div><div class="cloud cloud-5"></div>'; // More clouds
+                outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div><div class="cloud cloud-4"></div><div class="cloud cloud-5"></div>';
                 break;
             case 'sun-clouds':
                 outsideView.innerHTML = '<div class="sun"></div><div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
@@ -328,10 +316,10 @@ class WeatherWidget extends HTMLElement {
                 this.createRain();
                 break;
             case 'fog':
-                this.createFog(); // Distinct foggy effect
+                this.createFog();
                 break;
             case 'windy-effects':
-                this.createWindyEffects(); // Distinct windy effect
+                this.createWindyEffects();
                 break;
         }
     }
@@ -356,8 +344,8 @@ class WeatherWidget extends HTMLElement {
             const star = document.createElement('div');
             star.className = 'star';
             star.textContent = '✦';
-            star.style.left = Math.random() * 90 + 5 + '%'; // Keep stars away from edges
-            star.style.top = Math.random() * 60 + 10 + '%'; // Keep stars in upper portion
+            star.style.left = Math.random() * 90 + 5 + '%';
+            star.style.top = Math.random() * 60 + 10 + '%';
             star.style.animationDelay = Math.random() * 3 + 's';
             star.style.animationDuration = (Math.random() * 2 + 2) + 's';
             outsideView.appendChild(star);
@@ -394,7 +382,7 @@ class WeatherWidget extends HTMLElement {
 
     createWindyEffects() {
         const outsideView = this.shadowRoot.querySelector('.outside-view');
-        outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>'; // Still show some clouds
+        outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
         for (let i = 0; i < 10; i++) {
             const windLine = document.createElement('div');
             windLine.className = 'wind-line';
@@ -413,16 +401,13 @@ class WeatherWidget extends HTMLElement {
                 if (timeElement.textContent !== newTime) {
                     timeElement.textContent = newTime;
                     
-                    // Check if day/night status has changed and update display if needed
                     const currentWeatherInfo = this.shadowRoot.querySelector('.weather-info');
                     if (currentWeatherInfo && this.currentLocationName) {
                         const tempElement = this.shadowRoot.querySelector('.temp');
                         if (tempElement && tempElement.textContent !== '--°') {
-                            // Re-render to update day/night appearance
                             const outsideView = this.shadowRoot.querySelector('.outside-view');
                             const isNight = this.isNightTime();
                             
-                            // Update classes based on current time
                             if (isNight && !outsideView.classList.contains('night')) {
                                 outsideView.classList.add('night');
                             } else if (!isNight && outsideView.classList.contains('night')) {
@@ -432,7 +417,20 @@ class WeatherWidget extends HTMLElement {
                     }
                 }
             }
-        }, 60000); // Check every minute
+        }, 60000);
+    }
+
+    startWeatherUpdates() {
+        if (this.weatherInterval) {
+            clearInterval(this.weatherInterval);
+        }
+
+        console.log('Setting up automatic weather updates every 15 minutes');
+
+        this.weatherInterval = setInterval(() => {
+            console.log('Auto-refreshing weather data...');
+            this.loadWeatherData();
+        }, 15 * 60 * 1000);
     }
 
     render() {
@@ -506,11 +504,11 @@ class WeatherWidget extends HTMLElement {
                 }
 
                 .foggy {
-                    background: linear-gradient(to bottom, #B0C4DE 0%, #D3D3D3 95%, #505050 95%, #505050 100%); /* More muted, greyish for fog */
+                    background: linear-gradient(to bottom, #B0C4DE 0%, #D3D3D3 95%, #505050 95%, #505050 100%);
                 }
 
                 .windy {
-                    background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 95%, #228B22 95%, #228B22 100%); /* Similar to sunny/partly cloudy, but with wind effects */
+                    background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 95%, #228B22 95%, #228B22 100%);
                 }
                 
                 .rainy {
@@ -538,7 +536,7 @@ class WeatherWidget extends HTMLElement {
                 }
 
                 .foggy.night {
-                    background: linear-gradient(to bottom, #303040 0%, #505060 95%, #202020 95%, #202020 100%); /* Darker, mysterious fog at night */
+                    background: linear-gradient(to bottom, #303040 0%, #505060 95%, #202020 95%, #202020 100%);
                 }
 
                 .windy.night {
@@ -770,7 +768,7 @@ class WeatherWidget extends HTMLElement {
                     right: 15px;
                 }
 
-                .cloud-4 { /* Additional cloud for 'more-clouds' */
+                .cloud-4 {
                     width: 55px;
                     height: 19px;
                     top: 40px;
@@ -792,7 +790,7 @@ class WeatherWidget extends HTMLElement {
                     right: 8px;
                 }
 
-                .cloud-5 { /* Another additional cloud for 'more-clouds' */
+                .cloud-5 {
                     width: 65px;
                     height: 21px;
                     top: 70px;
@@ -854,7 +852,6 @@ class WeatherWidget extends HTMLElement {
                     51% { opacity: 0; }
                 }
 
-                /* Fog specific styles */
                 .fog-layer {
                     position: absolute;
                     width: 150%;
@@ -899,14 +896,13 @@ class WeatherWidget extends HTMLElement {
                     100% { transform: translateX(0) scale(1); opacity: 0.8; }
                 }
 
-                /* Windy specific styles */
                 .wind-line {
                     position: absolute;
                     width: 20px;
                     height: 2px;
                     background: rgba(255, 255, 255, 0.7);
                     border-radius: 1px;
-                    transform: rotate(-15deg); /* Slight angle for wind */
+                    transform: rotate(-15deg);
                     animation: gust 1s ease-out infinite;
                     opacity: 0;
                     z-index: 9;
