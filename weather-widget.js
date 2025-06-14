@@ -1,4 +1,4 @@
-class WeatherWidget extends HTMLElement {
+ class WeatherWidget extends HTMLElement {
             constructor() {
                 super();
                 this.attachShadow({ mode: 'open' });
@@ -30,89 +30,6 @@ class WeatherWidget extends HTMLElement {
                 }
             }
 
-            // Dynamic geocoding for any location
-            async geocodeLocation(location) {
-                console.log(`Geocoding location: ${location}`);
-                
-                try {
-                    // Clean up the location string
-                    const cleanLocation = location.trim();
-                    
-                    // Use Nominatim geocoding service
-                    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cleanLocation)}&format=json&limit=1&addressdetails=1`;
-                    
-                    const response = await fetch(url, {
-                        headers: {
-                            'User-Agent': 'WeatherWidget/1.0 (https://example.com/contact)'
-                        }
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Geocoding API returned ${response.status}: ${response.statusText}`);
-                    }
-
-                    const data = await response.json();
-                    console.log('Geocoding response:', data);
-
-                    if (!data || data.length === 0) {
-                        throw new Error(`Location "${location}" not found`);
-                    }
-
-                    const result = data[0];
-                    const locationData = {
-                        lat: parseFloat(result.lat),
-                        lon: parseFloat(result.lon),
-                        name: this.extractLocationName(result),
-                        country: result.address?.country || 'Unknown'
-                    };
-
-                    console.log('Parsed location data:', locationData);
-                    return locationData;
-
-                } catch (error) {
-                    console.error('Geocoding error:', error);
-                    throw new Error(`Failed to find location "${location}": ${error.message}`);
-                }
-            }
-
-            extractLocationName(geocodingResult) {
-                const address = geocodingResult.address;
-                if (!address) {
-                    return geocodingResult.display_name.split(',')[0].trim();
-                }
-
-                // Priority order for location name
-                return address.city || 
-                       address.town || 
-                       address.village || 
-                       address.municipality || 
-                       address.hamlet || 
-                       address.suburb || 
-                       address.county || 
-                       address.state || 
-                       geocodingResult.display_name.split(',')[0].trim();
-            }
-
-            // Estimate timezone from coordinates as fallback
-            estimateTimezone(lat, lon) {
-                // US timezone estimation
-                if (lat >= 24.0 && lat <= 71.0 && lon >= -180.0 && lon <= -66.0) {
-                    if (lon >= -130.0) return 'America/Anchorage'; // Alaska/Hawaii
-                    if (lon >= -125.0) return 'America/Los_Angeles'; // Pacific
-                    if (lon >= -114.0) return 'America/Denver'; // Mountain
-                    if (lon >= -104.0) return 'America/Chicago'; // Central
-                    return 'America/New_York'; // Eastern
-                }
-                
-                // International rough estimation
-                if (lat >= 35.0 && lat <= 71.0 && lon >= -10.0 && lon <= 40.0) return 'Europe/London';
-                if (lat >= 20.0 && lat <= 50.0 && lon >= 100.0 && lon <= 145.0) return 'Asia/Tokyo';
-                if (lat >= -45.0 && lat <= -10.0 && lon >= 110.0 && lon <= 155.0) return 'Australia/Sydney';
-                if (lat >= 6.0 && lat <= 37.0 && lon >= 68.0 && lon <= 97.0) return 'Asia/Kolkata';
-                
-                return 'UTC'; // Fallback
-            }
-
             async loadWeatherData() {
                 if (this.loadingState) return;
                 this.loadingState = true;
@@ -128,14 +45,11 @@ class WeatherWidget extends HTMLElement {
                 console.log(`Loading weather for: ${location}`);
 
                 try {
-                    // Geocode the location dynamically
-                    const locationData = await this.geocodeLocation(location);
+                    // Try multiple geocoding services for reliability
+                    const locationData = await this.geocodeWithFallbacks(location);
                     
                     this.currentLocationName = locationData.name;
-                    
-                    // Estimate timezone from coordinates
-                    this.currentTimezone = this.estimateTimezone(locationData.lat, locationData.lon);
-                    console.log(`Estimated timezone: ${this.currentTimezone}`);
+                    this.currentTimezone = locationData.timezone || this.estimateTimezone(locationData.lat, locationData.lon);
 
                     // Fetch weather data
                     const weatherData = await this.fetchWeatherFromAPI(locationData, units);
@@ -150,6 +64,161 @@ class WeatherWidget extends HTMLElement {
                 } finally {
                     this.loadingState = false;
                 }
+            }
+
+            async geocodeWithFallbacks(location) {
+                const geocoders = [
+                    () => this.geocodeWithOpenCage(location),
+                    () => this.geocodeWithNominatim(location),
+                    () => this.geocodeWithPositionstack(location)
+                ];
+
+                for (let i = 0; i < geocoders.length; i++) {
+                    try {
+                        console.log(`Trying geocoder ${i + 1} for: ${location}`);
+                        const result = await geocoders[i]();
+                        if (result) {
+                            console.log(`Geocoder ${i + 1} succeeded:`, result);
+                            return result;
+                        }
+                    } catch (error) {
+                        console.warn(`Geocoder ${i + 1} failed:`, error.message);
+                        if (i === geocoders.length - 1) {
+                            throw new Error(`All geocoding services failed for "${location}"`);
+                        }
+                    }
+                }
+            }
+
+            async geocodeWithOpenCage(location) {
+                // OpenCage has a free tier with good coverage
+                const apiKey = 'demo'; // Demo key for testing - you'd want your own
+                const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(location)}&key=${apiKey}&limit=1`;
+                
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`OpenCage API error: ${response.status}`);
+                
+                const data = await response.json();
+                if (!data.results || data.results.length === 0) {
+                    throw new Error('No results from OpenCage');
+                }
+
+                const result = data.results[0];
+                return {
+                    lat: result.geometry.lat,
+                    lon: result.geometry.lng,
+                    name: result.components.city || result.components.town || result.components.village || result.components.county || result.formatted.split(',')[0],
+                    timezone: result.annotations?.timezone?.name
+                };
+            }
+
+            async geocodeWithNominatim(location) {
+                // Add delay to respect rate limits
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&addressdetails=1`;
+                
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'WeatherWidget/1.0 (contact@example.com)'
+                    }
+                });
+                
+                if (!response.ok) throw new Error(`Nominatim API error: ${response.status}`);
+                
+                const data = await response.json();
+                if (!data || data.length === 0) {
+                    throw new Error('No results from Nominatim');
+                }
+
+                const result = data[0];
+                return {
+                    lat: parseFloat(result.lat),
+                    lon: parseFloat(result.lon),
+                    name: this.extractLocationName(result),
+                    timezone: null // Nominatim doesn't provide timezone
+                };
+            }
+
+            async geocodeWithPositionstack(location) {
+                // Another geocoding service as backup
+                const apiKey = 'demo'; // Demo key - you'd want your own
+                const url = `http://api.positionstack.com/v1/forward?access_key=${apiKey}&query=${encodeURIComponent(location)}&limit=1`;
+                
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Positionstack API error: ${response.status}`);
+                
+                const data = await response.json();
+                if (!data.data || data.data.length === 0) {
+                    throw new Error('No results from Positionstack');
+                }
+
+                const result = data.data[0];
+                return {
+                    lat: result.latitude,
+                    lon: result.longitude,
+                    name: result.locality || result.administrative_area || result.name,
+                    timezone: null
+                };
+            }
+
+            extractLocationName(geocodingResult) {
+                const address = geocodingResult.address;
+                if (!address) {
+                    return geocodingResult.display_name.split(',')[0].trim();
+                }
+
+                return address.city || 
+                       address.town || 
+                       address.village || 
+                       address.municipality || 
+                       address.hamlet || 
+                       address.suburb || 
+                       address.county || 
+                       address.state || 
+                       geocodingResult.display_name.split(',')[0].trim();
+            }
+
+            estimateTimezone(lat, lon) {
+                // Simple timezone estimation based on longitude
+                const offset = Math.round(lon / 15);
+                
+                // Handle special cases and major timezone boundaries
+                if (lat >= 24.0 && lat <= 71.0 && lon >= -180.0 && lon <= -66.0) {
+                    // North America
+                    if (lon >= -130.0) return 'America/Anchorage';
+                    if (lon >= -125.0) return 'America/Los_Angeles';
+                    if (lon >= -114.0) return 'America/Denver';
+                    if (lon >= -104.0) return 'America/Chicago';
+                    return 'America/New_York';
+                }
+                
+                // Europe
+                if (lat >= 35.0 && lat <= 71.0 && lon >= -10.0 && lon <= 40.0) {
+                    if (lon <= 5.0) return 'Europe/London';
+                    if (lon <= 15.0) return 'Europe/Paris';
+                    if (lon <= 25.0) return 'Europe/Berlin';
+                    return 'Europe/Moscow';
+                }
+                
+                // Asia
+                if (lat >= 0.0 && lat <= 50.0 && lon >= 60.0 && lon <= 150.0) {
+                    if (lon <= 75.0) return 'Asia/Kolkata';
+                    if (lon <= 105.0) return 'Asia/Bangkok';
+                    if (lon <= 125.0) return 'Asia/Shanghai';
+                    return 'Asia/Tokyo';
+                }
+                
+                // Australia/Oceania
+                if (lat >= -45.0 && lat <= -10.0 && lon >= 110.0 && lon <= 180.0) {
+                    if (lon <= 130.0) return 'Australia/Perth';
+                    if (lon <= 145.0) return 'Australia/Adelaide';
+                    return 'Australia/Sydney';
+                }
+                
+                // Default to UTC-based timezone
+                const utcOffset = Math.max(-12, Math.min(12, offset));
+                return utcOffset >= 0 ? `Etc/GMT-${utcOffset}` : `Etc/GMT+${Math.abs(utcOffset)}`;
             }
 
             async fetchWeatherFromAPI(locationData, units) {
@@ -175,7 +244,7 @@ class WeatherWidget extends HTMLElement {
                     // Use the timezone returned by the weather API if available
                     if (data.timezone) {
                         this.currentTimezone = data.timezone;
-                        console.log(`Updated timezone from API: ${this.currentTimezone}`);
+                        console.log(`Updated timezone from weather API: ${this.currentTimezone}`);
                     }
 
                     return this.parseWeatherData(data);
@@ -235,7 +304,7 @@ class WeatherWidget extends HTMLElement {
                     99: { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' }
                 };
 
-                return conditions[code] || conditions[1]; // Default to partly cloudy
+                return conditions[code] || conditions[1];
             }
 
             isNightTime() {
@@ -391,7 +460,7 @@ class WeatherWidget extends HTMLElement {
                             timeElement.textContent = newTime;
                         }
                     }
-                }, 60000); // Update every minute
+                }, 60000);
             }
 
             render() {
@@ -456,7 +525,6 @@ class WeatherWidget extends HTMLElement {
                             transition: all 1s ease;
                         }
                         
-                        /* Day backgrounds */
                         .sunny {
                             background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 95%, #228B22 95%, #228B22 100%);
                         }
@@ -481,7 +549,6 @@ class WeatherWidget extends HTMLElement {
                             background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 95%, #228B22 95%, #228B22 100%);
                         }
                         
-                        /* Night backgrounds */
                         .sunny.night {
                             background: linear-gradient(to bottom, #191970 0%, #191970 95%, #1F3F1F 95%, #1F3F1F 100%);
                         }
@@ -767,6 +834,4 @@ class WeatherWidget extends HTMLElement {
             }
         }
 
-        // Register the custom element
         customElements.define('weather-widget', WeatherWidget);
-    
