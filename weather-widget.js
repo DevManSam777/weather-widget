@@ -64,7 +64,7 @@ class WeatherWidget extends HTMLElement {
                 try {
                     // WeatherAPI.com free tier API key (demo key - you'd want your own for production)
                     // They allow location names directly - no separate geocoding needed!
-                    const apiKey = 'demo'; // For demo purposes - get free key at weatherapi.com
+                    const apiKey = '595f7617e8694a44abe15716251406'; // For demo purposes - get free key at weatherapi.com
                     const url = `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(location)}&aqi=no`;
                     
                     console.log(`Fetching weather from WeatherAPI: ${url}`);
