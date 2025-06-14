@@ -152,7 +152,7 @@ class WeatherWidget extends HTMLElement {
                     return { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' };
                 }
                 if (text.includes('fog') || text.includes('mist')) {
-                    return { name: 'Foggy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' };
+                    return { name: 'Foggy', dayClass: 'foggy', nightClass: 'foggy', dayEffects: 'fog', nightEffects: 'fog' };
                 }
                 
                 // Default to partly cloudy
@@ -318,6 +318,10 @@ class WeatherWidget extends HTMLElement {
                         outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="lightning">⚡</div>';
                         this.createRain();
                         break;
+                    case 'fog':
+                        outsideView.innerHTML = '';
+                        this.createFog();
+                        break;
                 }
             }
 
@@ -332,6 +336,24 @@ class WeatherWidget extends HTMLElement {
                     drop.style.animationDuration = (Math.random() * 0.3 + 0.4) + 's';
                     drop.style.animationDelay = Math.random() * 1.5 + 's';
                     outsideView.appendChild(drop);
+                }
+            }
+
+            createFog() {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                
+                // Create multiple fog layers for depth
+                for (let i = 0; i < 3; i++) {
+                    const fogLayer = document.createElement('div');
+                    fogLayer.className = `fog-layer fog-layer-${i + 1}`;
+                    outsideView.appendChild(fogLayer);
+                }
+                
+                // Add some very low, wispy clouds
+                for (let i = 0; i < 2; i++) {
+                    const fogCloud = document.createElement('div');
+                    fogCloud.className = `fog-cloud fog-cloud-${i + 1}`;
+                    outsideView.appendChild(fogCloud);
                 }
             }
 
@@ -478,6 +500,10 @@ class WeatherWidget extends HTMLElement {
                             background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 95%, #228B22 95%, #228B22 100%);
                         }
                         
+                        .foggy {
+                            background: linear-gradient(to bottom, #D3D3D3 0%, #D3D3D3 95%, #228B22 95%, #228B22 100%);
+                        }
+                        
                         .sunny.night {
                             background: linear-gradient(to bottom, #191970 0%, #191970 95%, #1F3F1F 95%, #1F3F1F 100%);
                         }
@@ -500,6 +526,10 @@ class WeatherWidget extends HTMLElement {
                         
                         .partly-cloudy.night {
                             background: linear-gradient(to bottom, #2F2F5F 0%, #2F2F5F 95%, #1F3F1F 95%, #1F3F1F 100%);
+                        }
+                        
+                        .foggy.night {
+                            background: linear-gradient(to bottom, #4F4F4F 0%, #4F4F4F 95%, #1F3F1F 95%, #1F3F1F 100%);
                         }
                         
                         .weather-info {
@@ -749,6 +779,113 @@ class WeatherWidget extends HTMLElement {
                             25% { opacity: 1; transform: scale(1.2); }
                             50% { opacity: 0.6; transform: scale(1); }
                             75% { opacity: 1; transform: scale(1.1); }
+                        }
+                        
+                        .fog-layer {
+                            position: absolute;
+                            width: 100%;
+                            height: 100%;
+                            background: rgba(220, 220, 220, 0.4);
+                            z-index: 8;
+                            animation: fog-drift linear infinite;
+                        }
+                        
+                        .fog-layer-1 {
+                            animation-duration: 20s;
+                            opacity: 0.6;
+                        }
+                        
+                        .fog-layer-2 {
+                            animation-duration: 25s;
+                            animation-direction: reverse;
+                            opacity: 0.4;
+                        }
+                        
+                        .fog-layer-3 {
+                            animation-duration: 30s;
+                            opacity: 0.3;
+                        }
+                        
+                        .foggy.night .fog-layer {
+                            background: rgba(150, 150, 150, 0.5);
+                        }
+                        
+                        @keyframes fog-drift {
+                            0% { transform: translateX(-100%); }
+                            100% { transform: translateX(100%); }
+                        }
+                        
+                        .fog-cloud {
+                            position: absolute;
+                            background: rgba(200, 200, 200, 0.6);
+                            border-radius: 50px;
+                            z-index: 6;
+                            animation: fog-float ease-in-out infinite;
+                        }
+                        
+                        .fog-cloud::before,
+                        .fog-cloud::after {
+                            content: '';
+                            position: absolute;
+                            background: rgba(200, 200, 200, 0.6);
+                            border-radius: 50px;
+                        }
+                        
+                        .fog-cloud-1 {
+                            width: 80px;
+                            height: 25px;
+                            bottom: 60px;
+                            left: 20px;
+                            animation-duration: 8s;
+                        }
+                        
+                        .fog-cloud-1::before {
+                            width: 35px;
+                            height: 35px;
+                            bottom: -10px;
+                            left: 15px;
+                        }
+                        
+                        .fog-cloud-1::after {
+                            width: 45px;
+                            height: 30px;
+                            bottom: -5px;
+                            right: 15px;
+                        }
+                        
+                        .fog-cloud-2 {
+                            width: 70px;
+                            height: 20px;
+                            bottom: 45px;
+                            right: 30px;
+                            animation-duration: 10s;
+                            animation-delay: -3s;
+                        }
+                        
+                        .fog-cloud-2::before {
+                            width: 30px;
+                            height: 30px;
+                            bottom: -8px;
+                            left: 12px;
+                        }
+                        
+                        .fog-cloud-2::after {
+                            width: 40px;
+                            height: 25px;
+                            bottom: -3px;
+                            right: 12px;
+                        }
+                        
+                        .foggy.night .fog-cloud,
+                        .foggy.night .fog-cloud::before,
+                        .foggy.night .fog-cloud::after {
+                            background: rgba(120, 120, 120, 0.7);
+                        }
+                        
+                        @keyframes fog-float {
+                            0%, 100% { transform: translateX(0px) translateY(0px); }
+                            33% { transform: translateX(5px) translateY(-3px); }
+                            66% { transform: translateX(-3px) translateY(2px); }
                         }
                         
                         .loading {
