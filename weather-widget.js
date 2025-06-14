@@ -119,7 +119,7 @@ class WeatherWidget extends HTMLElement {
                 const temperature = units === 'F' ? Math.round(current.temp_f) : Math.round(current.temp_c);
                 
                 // Map WeatherAPI condition to our visual effects
-                const condition = this.mapWeatherAPICondition(current.condition.text, current.condition.code);
+                const condition = this.mapWeatherAPICondition(current.condition.text, current.condition.code, current.wind_kph); // Pass wind speed
                 
                 return {
                     temperature: temperature,
@@ -130,7 +130,7 @@ class WeatherWidget extends HTMLElement {
                 };
             }
 
-            mapWeatherAPICondition(conditionText, conditionCode) {
+            mapWeatherAPICondition(conditionText, conditionCode, windKph) { // Added windKph parameter
                 const text = conditionText.toLowerCase();
                 
                 if (text.includes('sunny') || text.includes('clear')) {
@@ -140,7 +140,7 @@ class WeatherWidget extends HTMLElement {
                     return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
                 }
                 if (text.includes('cloudy') || text.includes('overcast')) {
-                    return { name: 'Cloudy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' };
+                    return { name: 'Cloudy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'more-clouds', nightEffects: 'more-clouds' }; // More clouds
                 }
                 if (text.includes('rain') || text.includes('drizzle') || text.includes('shower')) {
                     return { name: 'Rain', dayClass: 'rainy', nightClass: 'rainy', dayEffects: 'rain', nightEffects: 'rain' };
@@ -152,9 +152,14 @@ class WeatherWidget extends HTMLElement {
                     return { name: 'Thunderstorm', dayClass: 'stormy', nightClass: 'stormy', dayEffects: 'lightning', nightEffects: 'lightning' };
                 }
                 if (text.includes('fog') || text.includes('mist')) {
-                    return { name: 'Foggy', dayClass: 'cloudy', nightClass: 'cloudy', dayEffects: 'clouds', nightEffects: 'clouds' };
+                    return { name: 'Foggy', dayClass: 'foggy', nightClass: 'foggy', dayEffects: 'fog', nightEffects: 'fog' }; // Distinct foggy
                 }
                 
+                // Check for windy conditions based on wind speed (e.g., > 20 kph)
+                if (windKph > 20) { 
+                    return { name: 'Windy', dayClass: 'windy', nightClass: 'windy', dayEffects: 'windy-effects', nightEffects: 'windy-effects' }; // Distinct windy
+                }
+
                 // Default to partly cloudy
                 return { name: 'Partly Cloudy', dayClass: 'partly-cloudy', nightClass: 'partly-cloudy', dayEffects: 'sun-clouds', nightEffects: 'moon-clouds' };
             }
@@ -285,6 +290,7 @@ class WeatherWidget extends HTMLElement {
 
             addWeatherEffects(effects) {
                 const outsideView = this.shadowRoot.querySelector('.outside-view');
+                outsideView.innerHTML = ''; // Clear previous effects
                 
                 switch(effects) {
                     case 'sun':
@@ -300,6 +306,9 @@ class WeatherWidget extends HTMLElement {
                     case 'clouds':
                         outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div>';
                         break;
+                    case 'more-clouds':
+                        outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="cloud cloud-3"></div><div class="cloud cloud-4"></div><div class="cloud cloud-5"></div>'; // More clouds
+                        break;
                     case 'sun-clouds':
                         outsideView.innerHTML = '<div class="sun"></div><div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
                         break;
@@ -307,16 +316,20 @@ class WeatherWidget extends HTMLElement {
                         outsideView.innerHTML = '<div class="moon"></div><div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>';
                         break;
                     case 'rain':
-                        outsideView.innerHTML = '';
                         this.createRain();
                         break;
                     case 'snow':
-                        outsideView.innerHTML = '';
                         this.createSnow();
                         break;
                     case 'lightning':
                         outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div><div class="lightning">⚡</div>';
                         this.createRain();
+                        break;
+                    case 'fog':
+                        this.createFog(); // Distinct foggy effect
+                        break;
+                    case 'windy-effects':
+                        this.createWindyEffects(); // Distinct windy effect
                         break;
                 }
             }
@@ -359,6 +372,34 @@ class WeatherWidget extends HTMLElement {
                     flake.style.animationDuration = (Math.random() * 2 + 2) + 's';
                     flake.style.animationDelay = Math.random() * 1.5 + 's';
                     outsideView.appendChild(flake);
+                }
+            }
+
+            createFog() {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                const fogLayer1 = document.createElement('div');
+                fogLayer1.className = 'fog-layer fog-layer-1';
+                outsideView.appendChild(fogLayer1);
+
+                const fogLayer2 = document.createElement('div');
+                fogLayer2.className = 'fog-layer fog-layer-2';
+                outsideView.appendChild(fogLayer2);
+
+                const fogLayer3 = document.createElement('div');
+                fogLayer3.className = 'fog-layer fog-layer-3';
+                outsideView.appendChild(fogLayer3);
+            }
+
+            createWindyEffects() {
+                const outsideView = this.shadowRoot.querySelector('.outside-view');
+                outsideView.innerHTML = '<div class="cloud cloud-1"></div><div class="cloud cloud-2"></div>'; // Still show some clouds
+                for (let i = 0; i < 10; i++) {
+                    const windLine = document.createElement('div');
+                    windLine.className = 'wind-line';
+                    windLine.style.left = Math.random() * 100 + '%';
+                    windLine.style.top = Math.random() * 100 + '%';
+                    windLine.style.animationDelay = Math.random() * 1.5 + 's';
+                    outsideView.appendChild(windLine);
                 }
             }
 
@@ -461,6 +502,14 @@ class WeatherWidget extends HTMLElement {
                         .cloudy {
                             background: linear-gradient(to bottom, #B0C4DE 0%, #B0C4DE 95%, #228B22 95%, #228B22 100%);
                         }
+
+                        .foggy {
+                            background: linear-gradient(to bottom, #B0C4DE 0%, #D3D3D3 95%, #505050 95%, #505050 100%); /* More muted, greyish for fog */
+                        }
+
+                        .windy {
+                            background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 95%, #228B22 95%, #228B22 100%); /* Similar to sunny/partly cloudy, but with wind effects */
+                        }
                         
                         .rainy {
                             background: linear-gradient(to bottom, #4F4F4F 0%, #4F4F4F 95%, #228B22 95%, #228B22 100%);
@@ -484,6 +533,14 @@ class WeatherWidget extends HTMLElement {
                         
                         .cloudy.night {
                             background: linear-gradient(to bottom, #2F2F4F 0%, #2F2F4F 95%, #1F3F1F 95%, #1F3F1F 100%);
+                        }
+
+                        .foggy.night {
+                            background: linear-gradient(to bottom, #303040 0%, #505060 95%, #202020 95%, #202020 100%); /* Darker, mysterious fog at night */
+                        }
+
+                        .windy.night {
+                            background: linear-gradient(to bottom, #2F2F5F 0%, #2F2F5F 95%, #1F3F1F 95%, #1F3F1F 100%);
                         }
                         
                         .rainy.night {
@@ -678,77 +735,185 @@ class WeatherWidget extends HTMLElement {
                         .cloud-2::before {
                             width: 25px;
                             height: 25px;
-                            top: -12px;
-                            left: 8px;
+                            top: -10px;
+                            left: 5px;
                         }
                         
                         .cloud-2::after {
                             width: 35px;
                             height: 20px;
                             top: -8px;
-                            right: 8px;
+                            right: 5px;
                         }
                         
                         .cloud-3 {
-                            width: 45px;
-                            height: 15px;
-                            top: 20px;
-                            left: 60%;
+                            width: 70px;
+                            height: 22px;
+                            top: 60px;
+                            left: 80px;
                             animation: float 7s ease-in-out infinite;
-                            animation-delay: -2s;
                         }
                         
                         .cloud-3::before {
-                            width: 22px;
-                            height: 22px;
-                            top: -10px;
-                            left: 7px;
+                            width: 35px;
+                            height: 35px;
+                            top: -18px;
+                            left: 15px;
                         }
                         
                         .cloud-3::after {
-                            width: 30px;
-                            height: 18px;
-                            top: -7px;
-                            right: 7px;
+                            width: 45px;
+                            height: 30px;
+                            top: -12px;
+                            right: 15px;
+                        }
+
+                        .cloud-4 { /* Additional cloud for 'more-clouds' */
+                            width: 55px;
+                            height: 19px;
+                            top: 40px;
+                            left: 120px;
+                            animation: float 6.5s ease-in-out infinite reverse;
+                        }
+
+                        .cloud-4::before {
+                            width: 28px;
+                            height: 28px;
+                            top: -12px;
+                            left: 8px;
+                        }
+
+                        .cloud-4::after {
+                            width: 38px;
+                            height: 22px;
+                            top: -9px;
+                            right: 8px;
+                        }
+
+                        .cloud-5 { /* Another additional cloud for 'more-clouds' */
+                            width: 65px;
+                            height: 21px;
+                            top: 70px;
+                            right: 20px;
+                            animation: float 7.5s ease-in-out infinite;
+                        }
+
+                        .cloud-5::before {
+                            width: 32px;
+                            height: 32px;
+                            top: -16px;
+                            left: 12px;
+                        }
+
+                        .cloud-5::after {
+                            width: 42px;
+                            height: 28px;
+                            top: -11px;
+                            right: 12px;
                         }
                         
                         @keyframes float {
-                            0%, 100% { transform: translateX(0px); }
-                            50% { transform: translateX(10px); }
-                        }
-                        
-                        .lightning {
-                            position: absolute;
-                            top: 48px;
-                            left: 40px;
-                            color: #FFFF00;
-                            font-size: 28px;
-                            animation: lightning-flash 2s infinite;
-                            z-index: 3;
-                            text-shadow: 0 0 15px #FFFF00;
-                        }
-                        
-                        @keyframes lightning-flash {
-                            0%, 90%, 100% { opacity: 0; }
-                            5%, 85% { opacity: 1; }
+                            0% { transform: translateY(0); }
+                            50% { transform: translateY(-5px); }
+                            100% { transform: translateY(0); }
                         }
                         
                         .star {
                             position: absolute;
-                            color: #FFFFFF;
-                            font-size: 12px;
-                            animation: twinkle linear infinite;
-                            z-index: 3;
-                            user-select: none;
-                            text-shadow: 0 0 6px rgba(255,255,255,0.8);
-                            filter: drop-shadow(0 0 2px rgba(255,255,255,0.6));
+                            font-size: 10px;
+                            color: white;
+                            opacity: 0;
+                            animation: twinkle 4s ease-in-out infinite;
+                            z-index: 4;
+                            text-shadow: 0 0 5px rgba(255,255,255,0.7);
                         }
                         
                         @keyframes twinkle {
-                            0%, 100% { opacity: 0.3; transform: scale(0.8); }
-                            25% { opacity: 1; transform: scale(1.2); }
-                            50% { opacity: 0.6; transform: scale(1); }
-                            75% { opacity: 1; transform: scale(1.1); }
+                            0%, 100% { opacity: 0; }
+                            50% { opacity: 1; }
+                        }
+                        
+                        .lightning {
+                            position: absolute;
+                            top: 30%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            font-size: 80px;
+                            color: yellow;
+                            opacity: 0;
+                            animation: strike 2s infinite;
+                            z-index: 10;
+                            text-shadow: 0 0 20px yellow;
+                        }
+                        
+                        @keyframes strike {
+                            0%, 100% { opacity: 0; }
+                            50% { opacity: 1; }
+                            51% { opacity: 0; }
+                        }
+
+                        /* Fog specific styles */
+                        .fog-layer {
+                            position: absolute;
+                            width: 150%;
+                            height: 80%;
+                            background: rgba(255, 255, 255, 0.6);
+                            border-radius: 50%;
+                            filter: blur(15px);
+                            opacity: 0;
+                            animation: drift 15s ease-in-out infinite;
+                            z-index: 8;
+                        }
+
+                        .fog-layer-1 {
+                            top: 50%;
+                            left: -20%;
+                            transform: translateY(-50%) scale(1.2);
+                            animation-delay: 0s;
+                            width: 130%;
+                        }
+
+                        .fog-layer-2 {
+                            top: 40%;
+                            left: -10%;
+                            transform: translateY(-50%) scale(1.1);
+                            animation-delay: 5s;
+                            width: 140%;
+                            background: rgba(255, 255, 255, 0.5);
+                        }
+
+                        .fog-layer-3 {
+                            top: 60%;
+                            left: -30%;
+                            transform: translateY(-50%) scale(1.3);
+                            animation-delay: 10s;
+                            width: 120%;
+                            background: rgba(255, 255, 255, 0.7);
+                        }
+
+                        @keyframes drift {
+                            0% { transform: translateX(0) scale(1); opacity: 0.8; }
+                            50% { transform: translateX(30%) scale(1.1); opacity: 0.6; }
+                            100% { transform: translateX(0) scale(1); opacity: 0.8; }
+                        }
+
+                        /* Windy specific styles */
+                        .wind-line {
+                            position: absolute;
+                            width: 20px;
+                            height: 2px;
+                            background: rgba(255, 255, 255, 0.7);
+                            border-radius: 1px;
+                            transform: rotate(-15deg); /* Slight angle for wind */
+                            animation: gust 1s ease-out infinite;
+                            opacity: 0;
+                            z-index: 9;
+                        }
+
+                        @keyframes gust {
+                            0% { transform: translateX(-20px) rotate(-15deg); opacity: 0; }
+                            50% { transform: translateX(100px) rotate(-15deg); opacity: 1; }
+                            100% { transform: translateX(200px) rotate(-15deg); opacity: 0; }
                         }
                         
                         .loading {
@@ -756,25 +921,23 @@ class WeatherWidget extends HTMLElement {
                             top: 50%;
                             left: 50%;
                             transform: translate(-50%, -50%);
-                            color: rgba(255,255,255,0.8);
-                            font-size: 14px;
+                            color: white;
+                            font-family: -apple-system, system-ui, sans-serif;
+                            font-size: 18px;
                             text-align: center;
-                            padding: 10px;
-                            max-width: 200px;
                         }
                     </style>
-                    
                     <div class="window">
-                        <div class="outside-view cloudy">
-                            <div class="loading">Loading weather...</div>
+                        <div class="outside-view">
+                            <div class="loading">Loading Weather...</div>
                         </div>
                         <div class="glass-overlay"></div>
                         <div class="window-frame"></div>
                         <div class="weather-info">
-                            <div class="location">${location.split(',')[0]}</div>
+                            <div class="location">${location}</div>
                             <div class="temp">--°</div>
                             <div class="condition">Loading...</div>
-                            <div class="local-time">--:--</div>
+                            <div class="local-time">--:-- --</div>
                         </div>
                     </div>
                 `;
