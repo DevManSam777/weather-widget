@@ -30,62 +30,87 @@ class WeatherWidget extends HTMLElement {
                 }
             }
 
-            // Location database with coordinates and timezone info
-            getLocationData() {
-                return {
-                    'Tokyo, Japan': { 
-                        lat: 35.6762, lon: 139.6503, name: 'Tokyo', 
-                        timezone: 'Asia/Tokyo', country: 'Japan' 
-                    },
-                    'London, UK': { 
-                        lat: 51.5074, lon: -0.1278, name: 'London', 
-                        timezone: 'Europe/London', country: 'UK' 
-                    },
-                    'Sydney, Australia': { 
-                        lat: -33.8688, lon: 151.2093, name: 'Sydney', 
-                        timezone: 'Australia/Sydney', country: 'Australia' 
-                    },
-                    'Mumbai, India': { 
-                        lat: 19.0760, lon: 72.8777, name: 'Mumbai', 
-                        timezone: 'Asia/Kolkata', country: 'India' 
-                    },
-                    'Reykjavik, Iceland': { 
-                        lat: 64.1466, lon: -21.9426, name: 'Reykjavik', 
-                        timezone: 'Atlantic/Reykjavik', country: 'Iceland' 
-                    },
-                    'New York, NY': { 
-                        lat: 40.7128, lon: -74.0060, name: 'New York', 
-                        timezone: 'America/New_York', country: 'USA' 
-                    },
-                    'Los Angeles, CA': { 
-                        lat: 34.0522, lon: -118.2437, name: 'Los Angeles', 
-                        timezone: 'America/Los_Angeles', country: 'USA' 
-                    },
-                    'Paris, France': { 
-                        lat: 48.8566, lon: 2.3522, name: 'Paris', 
-                        timezone: 'Europe/Paris', country: 'France' 
-                    },
-                    'Berlin, Germany': { 
-                        lat: 52.5200, lon: 13.4050, name: 'Berlin', 
-                        timezone: 'Europe/Berlin', country: 'Germany' 
-                    },
-                    'Chicago, IL': { 
-                        lat: 41.8781, lon: -87.6298, name: 'Chicago', 
-                        timezone: 'America/Chicago', country: 'USA' 
-                    },
-                    '94513': { 
-                        lat: 37.9318, lon: -121.6958, name: 'Brentwood', 
-                        timezone: 'America/Los_Angeles', country: 'USA' 
-                    },
-                    '10001': { 
-                        lat: 40.7128, lon: -74.0060, name: 'New York', 
-                        timezone: 'America/New_York', country: 'USA' 
-                    },
-                    '90210': { 
-                        lat: 34.0901, lon: -118.4065, name: 'Beverly Hills', 
-                        timezone: 'America/Los_Angeles', country: 'USA' 
+            // Dynamic geocoding for any location
+            async geocodeLocation(location) {
+                console.log(`Geocoding location: ${location}`);
+                
+                try {
+                    // Clean up the location string
+                    const cleanLocation = location.trim();
+                    
+                    // Use Nominatim geocoding service
+                    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cleanLocation)}&format=json&limit=1&addressdetails=1`;
+                    
+                    const response = await fetch(url, {
+                        headers: {
+                            'User-Agent': 'WeatherWidget/1.0 (https://example.com/contact)'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Geocoding API returned ${response.status}: ${response.statusText}`);
                     }
-                };
+
+                    const data = await response.json();
+                    console.log('Geocoding response:', data);
+
+                    if (!data || data.length === 0) {
+                        throw new Error(`Location "${location}" not found`);
+                    }
+
+                    const result = data[0];
+                    const locationData = {
+                        lat: parseFloat(result.lat),
+                        lon: parseFloat(result.lon),
+                        name: this.extractLocationName(result),
+                        country: result.address?.country || 'Unknown'
+                    };
+
+                    console.log('Parsed location data:', locationData);
+                    return locationData;
+
+                } catch (error) {
+                    console.error('Geocoding error:', error);
+                    throw new Error(`Failed to find location "${location}": ${error.message}`);
+                }
+            }
+
+            extractLocationName(geocodingResult) {
+                const address = geocodingResult.address;
+                if (!address) {
+                    return geocodingResult.display_name.split(',')[0].trim();
+                }
+
+                // Priority order for location name
+                return address.city || 
+                       address.town || 
+                       address.village || 
+                       address.municipality || 
+                       address.hamlet || 
+                       address.suburb || 
+                       address.county || 
+                       address.state || 
+                       geocodingResult.display_name.split(',')[0].trim();
+            }
+
+            // Estimate timezone from coordinates as fallback
+            estimateTimezone(lat, lon) {
+                // US timezone estimation
+                if (lat >= 24.0 && lat <= 71.0 && lon >= -180.0 && lon <= -66.0) {
+                    if (lon >= -130.0) return 'America/Anchorage'; // Alaska/Hawaii
+                    if (lon >= -125.0) return 'America/Los_Angeles'; // Pacific
+                    if (lon >= -114.0) return 'America/Denver'; // Mountain
+                    if (lon >= -104.0) return 'America/Chicago'; // Central
+                    return 'America/New_York'; // Eastern
+                }
+                
+                // International rough estimation
+                if (lat >= 35.0 && lat <= 71.0 && lon >= -10.0 && lon <= 40.0) return 'Europe/London';
+                if (lat >= 20.0 && lat <= 50.0 && lon >= 100.0 && lon <= 145.0) return 'Asia/Tokyo';
+                if (lat >= -45.0 && lat <= -10.0 && lon >= 110.0 && lon <= 155.0) return 'Australia/Sydney';
+                if (lat >= 6.0 && lat <= 37.0 && lon >= 68.0 && lon <= 97.0) return 'Asia/Kolkata';
+                
+                return 'UTC'; // Fallback
             }
 
             async loadWeatherData() {
@@ -103,15 +128,14 @@ class WeatherWidget extends HTMLElement {
                 console.log(`Loading weather for: ${location}`);
 
                 try {
-                    // Get location data
-                    const locationData = this.getLocationData()[location];
+                    // Geocode the location dynamically
+                    const locationData = await this.geocodeLocation(location);
                     
-                    if (!locationData) {
-                        throw new Error(`Location "${location}" not found in database`);
-                    }
-
                     this.currentLocationName = locationData.name;
-                    this.currentTimezone = locationData.timezone;
+                    
+                    // Estimate timezone from coordinates
+                    this.currentTimezone = this.estimateTimezone(locationData.lat, locationData.lon);
+                    console.log(`Estimated timezone: ${this.currentTimezone}`);
 
                     // Fetch weather data
                     const weatherData = await this.fetchWeatherFromAPI(locationData, units);
@@ -146,6 +170,12 @@ class WeatherWidget extends HTMLElement {
 
                     if (!data.current_weather) {
                         throw new Error('Invalid weather data received');
+                    }
+
+                    // Use the timezone returned by the weather API if available
+                    if (data.timezone) {
+                        this.currentTimezone = data.timezone;
+                        console.log(`Updated timezone from API: ${this.currentTimezone}`);
                     }
 
                     return this.parseWeatherData(data);
@@ -739,3 +769,4 @@ class WeatherWidget extends HTMLElement {
 
         // Register the custom element
         customElements.define('weather-widget', WeatherWidget);
+    
