@@ -1,5 +1,7 @@
 # Weather Widget
 
+![Weather Widget Codepen Examples](weatherwidget.gif)
+
 A simple weather widget that shows current conditions in a window-style display with animated effects.
 
 ## How to Use
