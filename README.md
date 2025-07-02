@@ -31,7 +31,7 @@ Include the JavaScript file and add the HTML tag:
 <weather-widget location="LAX"></weather-widget>
 
 <!-- With Celsius -->
-<weather-widget location="London" units="C"></weather-widget>
+<weather-widget location="London, UK" units="C"></weather-widget>
 ```
 
 ## What It Does
