@@ -30,6 +30,9 @@ Include the JavaScript file and add the HTML tag:
 <!-- Airport codes -->
 <weather-widget location="LAX"></weather-widget>
 
+<!-- With Fahrenheit -->
+<weather-widget location="Miami, FL" units="F"></weather-widget>
+
 <!-- With Celsius -->
 <weather-widget location="London, UK" units="C"></weather-widget>
 ```
