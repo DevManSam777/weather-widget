@@ -10,14 +10,14 @@ Include the JavaScript file and add the HTML tag:
 
 ```html
 <script src="https://raw.githack.com/DevManSam777/weather-widget/main/weather-widget.js"></script>
-<weather-widget location="New York"></weather-widget>
+<weather-widget location="New York, New York"></weather-widget>
 ```
 
 ## Options
 
 ```html
 <!-- City names -->
-<weather-widget location="New York"></weather-widget>
+<weather-widget location="New York, New York"></weather-widget>
 <weather-widget location="London, UK"></weather-widget>
 
 <!-- ZIP codes -->
