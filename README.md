@@ -9,7 +9,7 @@ A simple weather widget that shows current conditions in a window-style display 
 Include the JavaScript file and add the HTML tag:
 
 ```html
-<script src="weather-widget.js"></script>
+<script src="https://raw.githack.com/DevManSam777/weather-widget/main/weather-widget.js"></script>
 <weather-widget location="New York"></weather-widget>
 ```
 
