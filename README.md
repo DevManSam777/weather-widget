@@ -60,4 +60,6 @@ weather-widget {
 
 ## License
 
-[MIT License](LICENSE)
+[LICENSE](LICENSE)  
+
+Copyright (c) 2025 DevManSam
