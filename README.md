@@ -60,4 +60,4 @@ weather-widget {
 
 ## License
 
-MIT [MIT License](LICENSE)
+[MIT License](LICENSE)
