@@ -57,3 +57,7 @@ weather-widget {
   transform: scale(1.5);
 }
 ```
+
+## License
+
+MIT [MIT License](LICENSE)
